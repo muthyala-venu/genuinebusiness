@@ -1,7 +1,7 @@
 {
-  "name": "LedgerBook P2P — Manual Transaction Tracker",
-  "short_name": "LedgerBook",
-  "description": "Manual P2P transaction bookkeeping ledger. No financial transactions take place on this platform.",
+  "name": "Genuine Business — Manual Transaction Tracker",
+  "short_name": "Genuine Business",
+  "description": "Genuine Business — the shared notebook for trusted exchange circles. Manual records only; no money moves inside the app.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

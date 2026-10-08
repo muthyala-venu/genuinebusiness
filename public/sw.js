@@ -1,6 +1,6 @@
-/* LedgerBook P2P service worker — offline app-shell cache.
-   Ledger data itself lives in localStorage (offline-first mock DB). */
-const CACHE = "ledgerbook-p2p-v1";
+/* Genuine Business service worker — offline app-shell cache.
+   Ledger data itself lives in the database (with an offline fallback on the device). */
+const CACHE = "genuine-business-v1";
 const CORE = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg"];
 
 self.addEventListener("install", (e) => {

@@ -306,7 +306,7 @@ async function useRemote() {
 
 export async function apiSignup({ username, wallet }) {
   if (await useRemote()) {
-    const j = await call("/api/auth/signup", { method: "POST", body: { username, wallet } });
+    const j = await call("/api/auth?action=signup", { method: "POST", body: { username, wallet } });
     setToken(j.token);
     cache.write(CACHE_USER, j.user);
     return j; // { user, generatedPassword, token }
@@ -318,7 +318,7 @@ export async function apiSignup({ username, wallet }) {
 
 export async function apiLogin({ username, password }) {
   if (await useRemote()) {
-    const j = await call("/api/auth/login", { method: "POST", body: { username, password } });
+    const j = await call("/api/auth?action=login", { method: "POST", body: { username, password } });
     setToken(j.token);
     cache.write(CACHE_USER, j.user);
     return j;
@@ -333,7 +333,7 @@ export async function apiMe() {
   if (await useRemote()) {
     if (!getToken()) return null;
     try {
-      const j = await call("/api/auth/me");
+      const j = await call("/api/auth?action=me");
       cache.write(CACHE_USER, j.user);
       return j.user;
     } catch {
@@ -344,13 +344,13 @@ export async function apiMe() {
 }
 
 export async function apiChangePassword({ currentPassword, newPassword }) {
-  if (await useRemote()) return call("/api/auth/change-password", { method: "POST", body: { currentPassword, newPassword } });
+  if (await useRemote()) return call("/api/auth?action=change-password", { method: "POST", body: { currentPassword, newPassword } });
   return local.changePassword({ currentPassword, newPassword });
 }
 
 export async function apiUpdateProfile(patch) {
   if (await useRemote()) {
-    const j = await call("/api/user/update", { method: "POST", body: patch });
+    const j = await call("/api/user", { method: "POST", body: patch });
     cache.write(CACHE_USER, j.user);
     return j.user;
   }
@@ -360,12 +360,12 @@ export async function apiUpdateProfile(patch) {
 }
 
 export async function apiLookupPartner(wallet) {
-  if (await useRemote()) return call("/api/partner/lookup", { method: "POST", body: { wallet } });
+  if (await useRemote()) return call("/api/pairing?action=lookup", { method: "POST", body: { wallet } });
   return { partner: local.lookupPartner({ wallet }) };
 }
 
 export async function apiDeposit(planId, targetWallet) {
-  if (await useRemote()) return call("/api/deposit", { method: "POST", body: { planId, targetWallet } });
+  if (await useRemote()) return call("/api/pairing?action=request", { method: "POST", body: { planId, targetWallet } });
   return local.deposit({ planId, targetWallet });
 }
 
@@ -392,12 +392,12 @@ export async function apiNotifs() {
 }
 
 export async function apiMarkRead(notifId) {
-  if (await useRemote()) { try { await call("/api/notifs-read", { method: "POST", body: { notifId } }); } catch {} return; }
+  if (await useRemote()) { try { await call("/api/notifs?action=read", { method: "POST", body: { notifId } }); } catch {} return; }
   local.markRead(notifId, true);
 }
 
 export async function apiMarkAllRead() {
-  if (await useRemote()) { try { await call("/api/notifs-read", { method: "POST", body: { all: true } }); } catch {} return; }
+  if (await useRemote()) { try { await call("/api/notifs?action=read", { method: "POST", body: { all: true } }); } catch {} return; }
   local.markAllRead();
 }
 
@@ -407,22 +407,22 @@ export async function apiAck({ txnId, verifiedAmount }) {
 }
 
 export async function apiAdminUsers() {
-  if (await useRemote()) return (await call("/api/admin/users")).users;
+  if (await useRemote()) return (await call("/api/admin?action=users")).users;
   return local.adminUsers();
 }
 
 export async function apiAdminTxns() {
-  if (await useRemote()) return (await call("/api/admin/txns")).txns;
+  if (await useRemote()) return (await call("/api/admin?action=txns")).txns;
   return local.adminTxns();
 }
 
 export async function apiAdminComplete(txnId) {
-  if (await useRemote()) return call("/api/admin/txn-complete", { method: "POST", body: { txnId } });
+  if (await useRemote()) return call("/api/admin?action=complete", { method: "POST", body: { txnId } });
   return local.adminComplete({ txnId });
 }
 
 export async function apiAdminBlock(userId, blocked) {
-  if (await useRemote()) return call("/api/admin/user-block", { method: "POST", body: { userId, blocked } });
+  if (await useRemote()) return call("/api/admin?action=block", { method: "POST", body: { userId, blocked } });
   return local.adminBlock({ userId, blocked });
 }
 

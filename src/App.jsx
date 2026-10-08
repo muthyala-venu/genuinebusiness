@@ -52,12 +52,6 @@ function Field({ label, children, hint }) {
   );
 }
 
-function Logo({ size = "h-9 w-9 text-base" }) {
-  return (
-    <div className={`grid ${size} shrink-0 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 to-violet-500 font-black text-[#06121f]`}>₿</div>
-  );
-}
-
 const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20";
 const btnPrimary = "rounded-xl bg-gradient-to-r from-cyan-400 to-violet-500 px-4 py-2.5 text-sm font-bold text-[#06121f] hover:brightness-110 active:scale-[.99] disabled:opacity-50 disabled:pointer-events-none transition";
 const btnGhost = "rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-white/10 transition";
@@ -117,12 +111,9 @@ function AuthScreen({ onAuthed, toast }) {
     <div className="mx-auto w-full max-w-6xl px-4 pb-16">
       {/* top brand bar */}
       <div className="rise flex items-center justify-between py-5">
-        <div className="flex items-center gap-2.5">
-          <Logo />
-          <div>
-            <div className="text-sm font-black leading-none">LedgerBook P2P</div>
-            <div className="text-[11px] text-slate-500">{BRAND_TAGLINE}</div>
-          </div>
+        <div>
+          <div className="text-base font-black leading-none">Genuine Business</div>
+          <div className="mt-0.5 text-[11px] text-slate-500">{BRAND_TAGLINE}</div>
         </div>
         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold text-slate-400">Works offline · Installs like an app</span>
       </div>
@@ -137,7 +128,7 @@ function AuthScreen({ onAuthed, toast }) {
             Handshake deals deserve a <span className="bg-gradient-to-r from-cyan-300 via-sky-300 to-violet-400 bg-clip-text text-transparent">clean record.</span>
           </h1>
           <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-slate-400">
-            <b className="text-slate-100">LedgerBook P2P</b> is the shared notebook for trusted exchange circles.
+            <b className="text-slate-100">Genuine Business</b> is the shared notebook for trusted exchange circles.
             When two people settle something offline, both sides leave a trace here — you paste the wallet text your partner shared
             (over WhatsApp or in person), confirm their profile, and send a request; the receiver then confirms with <b className="text-slate-200">Acknowledge</b>,
             and the ledger glows green. Simple, transparent, dispute-free.
@@ -157,11 +148,10 @@ function AuthScreen({ onAuthed, toast }) {
             ))}
           </div>
 
-          {/* sample ledger preview */}
+          {/* ledger preview */}
           <div className="glass mt-4 overflow-hidden rounded-2xl">
             <div className="flex items-center justify-between border-b border-white/5 px-4 py-2.5">
               <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">How a record looks</span>
-              <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-slate-500">sample</span>
             </div>
             {[
               { p: "@partner · Silver $350", s: "completed" },
@@ -188,7 +178,7 @@ function AuthScreen({ onAuthed, toast }) {
           <p className="mb-4 text-xs text-slate-500">
             {mode === "login"
               ? "Log in with the username you chose and the password the system gave you."
-              : "Choose a username and paste your public wallet text — we'll forge a strong random password for you."}
+              : "Choose a username and paste your public wallet text — we'll create a strong random password for you."}
           </p>
           <div className="mb-4 grid grid-cols-2 rounded-xl bg-black/30 p-1 text-sm font-bold">
             {(["login", "signup"]).map((m) => (
@@ -208,7 +198,7 @@ function AuthScreen({ onAuthed, toast }) {
               </Field>
             ) : (
               <div className="rounded-xl border border-cyan-400/25 bg-cyan-400/10 p-3 text-xs leading-relaxed text-cyan-200">
-                <b>No password to invent.</b> The moment you join, the system forges a strong random password for you — shown once, changeable anytime.
+                <b>No password to invent.</b> The moment you join, the system creates a strong random password for you — shown once, changeable anytime.
               </div>
             )}
             {mode === "signup" && (
@@ -217,7 +207,7 @@ function AuthScreen({ onAuthed, toast }) {
               </Field>
             )}
             {err && <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-xs text-rose-300">{err}</div>}
-            <button className={`${btnPrimary} w-full`} disabled={busy}>{busy ? "One moment…" : mode === "signup" ? "Join — forge my password" : "Open my ledger"}</button>
+            <button className={`${btnPrimary} w-full`} disabled={busy}>{busy ? "One moment…" : mode === "signup" ? "Join — create my password" : "Open my ledger"}</button>
             {/* dev-only shortcut: stripped from production builds, never shown on the live site */}
             {!isRemote && isRemote !== null && import.meta.env.DEV && (
               <div className="rounded-xl bg-black/30 p-3 text-[11px] leading-relaxed text-slate-500">
@@ -397,9 +387,8 @@ function Dashboard({ me, setMe, toast }) {
       <header className="sticky top-0 z-40 -mx-4 border-b border-white/5 bg-[#080b14]/85 px-4 py-3 backdrop-blur-lg">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <Logo />
             <div>
-              <div className="text-sm font-black leading-none">LedgerBook P2P</div>
+              <div className="text-sm font-black leading-none">Genuine Business</div>
               <div className="mono text-[10px] text-slate-500">@{me.username} · {BRAND_TAGLINE}</div>
             </div>
           </div>
@@ -645,7 +634,7 @@ function Dashboard({ me, setMe, toast }) {
           </Card>
           <Card className="border-violet-400/25">
             <h2 className="text-lg font-black">Security</h2>
-            <p className="text-xs text-slate-500">Your password was forged by the system at signup. Rotate it here whenever you like (min 8 characters).</p>
+            <p className="text-xs text-slate-500">Your password was created by the system at signup. Change it here whenever you like (min 8 characters).</p>
             <form onSubmit={doChangePassword} className="mt-3 space-y-3">
               <Field label="Current password">
                 <input className={inputCls} type="password" value={pwForm.current} onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })} autoComplete="current-password" />
@@ -662,13 +651,13 @@ function Dashboard({ me, setMe, toast }) {
           <Card className="md:col-span-2">
             <h2 className="text-lg font-black">Get the app on your phone</h2>
             <p className="mt-1 text-xs leading-relaxed text-slate-400">
-              Add LedgerBook to your home screen for a fullscreen, app-like experience that keeps working even on patchy internet.
+              Add Genuine Business to your home screen for a fullscreen, app-like experience that keeps working even on patchy internet.
               iPhone: <b className="text-slate-200">Share → Add to Home Screen</b> ·
               Android: <b className="text-slate-200">⋮ → Install app / Add to Home screen</b>.
             </p>
             {installEvt
-              ? <button className={`${btnPrimary} mt-3`} onClick={() => installEvt.prompt()}>⬇ Install LedgerBook</button>
-              : <p className="mt-3 text-xs text-slate-500">An install button will appear here automatically when your browser is ready.</p>}
+              ? <button className={`${btnPrimary} mt-3`} onClick={() => installEvt.prompt()}>⬇ Install Genuine Business</button>
+              : <p className="mt-3 text-xs text-slate-500">On supported browsers, an install button appears here.</p>}
           </Card>
         </div>
       )}
@@ -894,9 +883,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#080b14] bg-[radial-gradient(60rem_30rem_at_50%_-10rem,rgba(34,211,238,.12),transparent),radial-gradient(40rem_20rem_at_90%_10rem,rgba(167,139,250,.10),transparent)] text-slate-100">
       {!ready ? (
-        <div className="grid min-h-screen place-items-center gap-3 text-sm text-slate-500">
-          <div className="flex items-center gap-2.5"><Logo /><b className="text-slate-300">LedgerBook P2P</b></div>
-        </div>
+          <div className="grid min-h-screen place-items-center gap-3 text-sm font-bold text-slate-300">
+            Genuine Business
+          </div>
       ) : !me ? (
         <AuthScreen onAuthed={async () => setMe(await apiMe())} toast={toast} />
       ) : me.blocked ? (
@@ -912,7 +901,7 @@ export default function App() {
         <Dashboard me={me} setMe={setMe} toast={toast} />
       )}
       <footer className="mx-auto max-w-6xl px-4 pb-10 text-center">
-        <div className="flex items-center justify-center gap-2 text-xs font-bold text-slate-400"><Logo size="h-6 w-6 text-xs" /> LedgerBook P2P · {BRAND_TAGLINE}</div>
+        <div className="text-xs font-bold text-slate-400">Genuine Business · {BRAND_TAGLINE}</div>
         <div className="mt-1 text-[11px] text-slate-600">{DISCLAIMER}</div>
       </footer>
       <div className="fixed bottom-4 left-1/2 z-[60] flex w-full max-w-md -translate-x-1/2 flex-col gap-2 px-4">
