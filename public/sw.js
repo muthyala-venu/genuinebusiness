@@ -1,6 +1,7 @@
 /* Genuine Business service worker — offline app-shell cache.
-   Ledger data itself lives in the database (with an offline fallback on the device). */
-const CACHE = "genuine-business-v1";
+   Only static assets are cached. API responses are per-user live data
+   and must NEVER be cached (a cached identity/ledger would leak across logins). */
+const CACHE = "genuine-business-v2";
 const CORE = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg"];
 
 self.addEventListener("install", (e) => {
@@ -20,6 +21,16 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const { request } = e;
   if (request.method !== "GET") return;
+  // API calls are always live — bypass the cache entirely.
+  try {
+    if (new URL(request.url).pathname.startsWith("/api/")) {
+      e.respondWith(fetch(request));
+      return;
+    }
+  } catch {
+    e.respondWith(fetch(request));
+    return;
+  }
   // Navigation: network-first, fall back to cached shell for offline / Add-to-Home-Screen launches.
   if (request.mode === "navigate") {
     e.respondWith(
