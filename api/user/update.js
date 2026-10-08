@@ -1,5 +1,5 @@
-import { getDb, send, readJson, cleanUser } from "./_lib/mongo.js";
-import { getAuthUser } from "./_lib/auth.js";
+import { getDb, send, readJson, cleanUser } from "../_lib/mongo.js";
+import { getAuthUser } from "../_lib/auth.js";
 
 const PLANS = ["starter", "bronze", "silver", "gold", "platinum"];
 
