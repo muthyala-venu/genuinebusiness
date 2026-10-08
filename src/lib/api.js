@@ -81,18 +81,33 @@ function seedLocal() {
   if (!localStorage.getItem(LK.users)) {
     const now = new Date().toISOString();
     lwrite(LK.users, [
-      { id: "u_alice", username: "alice", passwordHash: lhash("Alice-Dev-01!"), wallet: "TAl1c3ExAmPleTru5tW4lletAddr355001", plan: "bronze", createdAt: now },
-      { id: "u_bob", username: "bob", passwordHash: lhash("Bob-Dev-02!"), wallet: "TB0bExAmpLeTrustWallEt9ddr771200", plan: "bronze", createdAt: now },
-      { id: "u_carol", username: "carol", passwordHash: lhash("Carol-Dev-03!"), wallet: "TCar0lD3moTrustWalletAddr990021", plan: "silver", createdAt: now },
+      { id: "u_alice", username: "alice", passwordHash: lhash("Alice-Dev-01!"), wallet: "TAl1c3ExAmPleTru5tW4lletAddr355001", plan: "bronze", role: "member", blocked: false, createdAt: now },
+      { id: "u_bob", username: "bob", passwordHash: lhash("Bob-Dev-02!"), wallet: "TB0bExAmpLeTrustWallEt9ddr771200", plan: "bronze", role: "member", blocked: false, createdAt: now },
+      { id: "u_carol", username: "carol", passwordHash: lhash("Carol-Dev-03!"), wallet: "TCar0lD3moTrustWalletAddr990021", plan: "silver", role: "member", blocked: false, createdAt: now },
+      { id: "u_admin", username: "admin", passwordHash: lhash("Admin-Dev-00!"), wallet: "TAdminCircleLedgerWallet000000001", plan: null, role: "admin", blocked: false, createdAt: now },
     ]);
   }
   if (!localStorage.getItem(LK.txns)) lwrite(LK.txns, []);
   if (!localStorage.getItem(LK.notifs)) lwrite(LK.notifs, []);
+  // migrate older seeds: ensure admin exists + role/blocked flags present
+  const seeded = lread(LK.users, []);
+  let touched = false;
+  const withFlags = seeded.map((u) => {
+    const n = { role: "member", blocked: false, ...u };
+    if (n.role !== u.role || n.blocked !== u.blocked) touched = true;
+    return n;
+  });
+  if (!withFlags.some((u) => u.username.toLowerCase() === "admin")) {
+    withFlags.push({ id: "u_admin", username: "admin", passwordHash: lhash("Admin-Dev-00!"), wallet: "TAdminCircleLedgerWallet000000001", plan: null, role: "admin", blocked: false, createdAt: new Date().toISOString() });
+    touched = true;
+  }
+  if (touched) lwrite(LK.users, withFlags);
 }
 export const LOCAL_DEMO_CREDS = [
   { username: "alice", password: "Alice-Dev-01!" },
   { username: "bob", password: "Bob-Dev-02!" },
   { username: "carol", password: "Carol-Dev-03!" },
+  { username: "admin", password: "Admin-Dev-00!" },
 ];
 
 const local = {
@@ -102,6 +117,7 @@ const local = {
     wallet = String(wallet || "").trim();
     if (username.length < 3) throw new Error("Username must be at least 3 characters.");
     if (!/^[a-zA-Z0-9_.-]+$/.test(username)) throw new Error("Username may only contain letters, numbers, _, . or -.");
+    if (username.toLowerCase() === "admin") throw new Error("That username is reserved. Pick another one.");
     if (wallet.length < 10) throw new Error("Paste your public Trust Wallet address text string (min 10 chars).");
     const users = lread(LK.users, []);
     if (users.some((u) => u.username.toLowerCase() === username.toLowerCase()))
@@ -120,6 +136,7 @@ const local = {
     const users = lread(LK.users, []);
     const u = users.find((x) => x.username.toLowerCase() === String(username || "").trim().toLowerCase());
     if (!u || u.passwordHash !== lhash(String(password || ""))) throw new Error("Invalid username or password.");
+    if (u.blocked) throw new Error("This account has been blocked. Contact support.");
     lwrite(LK.session, { userId: u.id });
     return { user: strip(u) };
   },
@@ -233,6 +250,48 @@ const local = {
     }, ...notifs]);
     return txn;
   },
+  _requireAdmin() {
+    seedLocal();
+    const s = lread(LK.session, null);
+    const me = lread(LK.users, []).find((x) => x.id === s?.userId);
+    if (!me || (me.role !== "admin" && me.username.toLowerCase() !== "admin")) throw new Error("Admins only.");
+    return me;
+  },
+  adminUsers() {
+    this._requireAdmin();
+    return lread(LK.users, []).map(strip);
+  },
+  adminTxns() {
+    this._requireAdmin();
+    return lread(LK.txns, []);
+  },
+  adminComplete({ txnId }) {
+    this._requireAdmin();
+    const txns = lread(LK.txns, []);
+    const txn = txns.find((t) => t.id === txnId);
+    if (!txn) throw new Error("Record not found.");
+    if (txn.status === "completed") throw new Error("This record is already completed.");
+    Object.assign(txn, { status: "completed", verifiedAmount: txn.amount, completedAt: new Date().toISOString() });
+    lwrite(LK.txns, txns);
+    const note = `An admin marked your ${txn.planName} record (@${txn.senderUsername} ↔ @${txn.targetUsername}) as Completed.`;
+    const notifs = lread(LK.notifs, []);
+    lwrite(LK.notifs, [
+      { id: uid("notif"), userId: txn.senderId, txnId: txn.id, text: note, read: false, createdAt: new Date().toISOString() },
+      { id: uid("notif"), userId: txn.targetId, txnId: txn.id, text: note, read: false, createdAt: new Date().toISOString() },
+      ...notifs,
+    ]);
+    return txn;
+  },
+  adminBlock({ userId, blocked }) {
+    this._requireAdmin();
+    const users = lread(LK.users, []);
+    const target = users.find((u) => u.id === userId);
+    if (!target) throw new Error("User not found.");
+    if (target.role === "admin" || target.username.toLowerCase() === "admin") throw new Error("Admin accounts can't be blocked.");
+    target.blocked = !!blocked;
+    lwrite(LK.users, users);
+    return { ok: true };
+  },
 };
 function strip(u) {
   if (!u) return null;
@@ -345,6 +404,26 @@ export async function apiMarkAllRead() {
 export async function apiAck({ txnId, verifiedAmount }) {
   if (await useRemote()) return call("/api/ack", { method: "POST", body: { txnId, verifiedAmount } });
   return local.ack({ txnId, verifiedAmount });
+}
+
+export async function apiAdminUsers() {
+  if (await useRemote()) return (await call("/api/admin/users")).users;
+  return local.adminUsers();
+}
+
+export async function apiAdminTxns() {
+  if (await useRemote()) return (await call("/api/admin/txns")).txns;
+  return local.adminTxns();
+}
+
+export async function apiAdminComplete(txnId) {
+  if (await useRemote()) return call("/api/admin/txn-complete", { method: "POST", body: { txnId } });
+  return local.adminComplete({ txnId });
+}
+
+export async function apiAdminBlock(userId, blocked) {
+  if (await useRemote()) return call("/api/admin/user-block", { method: "POST", body: { userId, blocked } });
+  return local.adminBlock({ userId, blocked });
 }
 
 export function apiLogout() {

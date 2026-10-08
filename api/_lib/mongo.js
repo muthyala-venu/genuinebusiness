@@ -42,6 +42,19 @@ export function cleanUser(u) {
     username: u.usernameDisplay || u.username,
     wallet: u.wallet,
     plan: u.plan || null,
+    role: u.role || "member",
+    blocked: !!u.blocked,
+    createdAt: u.createdAt,
+  };
+}
+
+export function cleanUserPublic(u) {
+  if (!u) return null;
+  return {
+    id: String(u._id),
+    username: u.usernameDisplay || u.username,
+    wallet: u.wallet,
+    plan: u.plan || null,
     createdAt: u.createdAt,
   };
 }

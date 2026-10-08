@@ -11,6 +11,7 @@ export default async function handler(req, res) {
     const wall = String(wallet || "").trim();
     if (name.length < 3) return send(res, 400, { error: "Username must be at least 3 characters." });
     if (!/^[a-zA-Z0-9_.-]+$/.test(name)) return send(res, 400, { error: "Username may only contain letters, numbers, _, . or -." });
+    if (name.toLowerCase() === "admin") return send(res, 400, { error: "That username is reserved. Pick another one." });
     if (wall.length < 10) return send(res, 400, { error: "Paste your public Trust Wallet address text string (min 10 chars)." });
 
     const db = await getDb();

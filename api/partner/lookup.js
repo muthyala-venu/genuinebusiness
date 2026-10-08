@@ -1,5 +1,5 @@
-import { getDb, send, readJson } from "./_lib/mongo.js";
-import { getAuthUser } from "./_lib/auth.js";
+import { getDb, send, readJson } from "../_lib/mongo.js";
+import { getAuthUser } from "../_lib/auth.js";
 
 const PLAN_NAMES = { starter: "Starter", bronze: "Bronze", silver: "Silver", gold: "Gold", platinum: "Platinum" };
 
@@ -11,6 +11,7 @@ export default async function handler(req, res) {
   try {
     const me = await getAuthUser(req);
     if (!me) return send(res, 401, { error: "Not authenticated." });
+    if (me.blocked) return send(res, 403, { error: "This account has been blocked. Contact support." });
     const { wallet } = await readJson(req);
     const wall = String(wallet || "").trim();
     if (wall.length < 10) return send(res, 400, { error: "Paste your partner's full wallet text first." });

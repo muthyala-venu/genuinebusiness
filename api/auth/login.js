@@ -11,6 +11,7 @@ export default async function handler(req, res) {
     if (!u) return send(res, 401, { error: "Invalid username or password." });
     const ok = await verifyPassword(String(password || ""), u.passwordHash);
     if (!ok) return send(res, 401, { error: "Invalid username or password." });
+    if (u.blocked) return send(res, 403, { error: "This account has been blocked. Contact support." });
     const token = signToken(u._id);
     return send(res, 200, { user: cleanUser(u), token });
   } catch (e) {

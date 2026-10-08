@@ -9,6 +9,15 @@ Manual P2P bookkeeping ledger. No money moves here — purely visual record-keep
 3. The sender confirms the profile and sends a pairing request (`POST /api/deposit { planId, targetWallet }`) — one wallet text belongs to exactly one member.
 4. The partner gets an inbox note and acknowledges after verifying offline → status flips to Completed.
 
+## Admin dashboard
+- Fixed admin username: `admin` (reserved — members can't register it).
+- Create it in production once:
+  `MONGODB_URI="..." MONGODB_DB="ledgerbook_p2p" ADMIN_PASSWORD="..." node scripts/seed-admin.mjs`
+  then log in as `admin` and change the password under Account → Security.
+- An **Admin** tab appears for the admin: circle stats, full member list (search, block/unblock —
+  blocked accounts can't log in or act), all pairing records (filter, search, force-complete stuck
+  Pending entries — both sides get notified).
+
 ## Stack
 - Frontend: React + Vite + Tailwind (PWA, `public/manifest.webmanifest` + `public/sw.js`)
 - Backend: Vercel serverless (`/api/*`) + MongoDB (`users`, `txns`, `notifs`, `copylogs`)

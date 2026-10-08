@@ -4,6 +4,7 @@ import {
   apiSignup, apiLogin, apiMe, apiLogout, apiChangePassword, apiUpdateProfile,
   apiDeposit, apiTxns, apiNotifs, apiMarkRead, apiMarkAllRead, apiAck,
   exportLedgerJSON, remoteAvailable, LOCAL_DEMO_CREDS, apiLookupPartner,
+  apiAdminUsers, apiAdminTxns, apiAdminComplete, apiAdminBlock,
 } from "./lib/api";
 
 const DISCLAIMER = "This dashboard is a manual ledger tracker. No financial transactions take place on this platform.";
@@ -388,6 +389,7 @@ function Dashboard({ me, setMe, toast }) {
     { id: "ledger", label: "Ledger" },
     { id: "alerts", label: `Inbox${unread ? ` (${unread})` : ""}` },
     { id: "account", label: "Account" },
+    ...(me.role === "admin" ? [{ id: "admin", label: "Admin" }] : []),
   ];
 
   return (
@@ -671,9 +673,163 @@ function Dashboard({ me, setMe, toast }) {
         </div>
       )}
 
+      {!loading && tab === "admin" && me.role === "admin" && (
+        <AdminPanel toast={toast} />
+      )}
+
       {receipt && (
         <RequestModal receipt={receipt} plan={planById(receipt.planId)} onClose={() => setReceipt(null)} toast={toast} />
       )}
+    </div>
+  );
+}
+
+/* ================= Admin ================= */
+function AdminPanel({ toast }) {
+  const [users, setUsers] = useState([]);
+  const [txns, setTxns] = useState([]);
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState("pending");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [u, t] = await Promise.all([apiAdminUsers(), apiAdminTxns()]);
+      setUsers(u || []);
+      setTxns(t || []);
+    } catch (e) { toast(e.message); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function toggleBlock(u) {
+    try {
+      setBusy(true);
+      await apiAdminBlock(u.id, !u.blocked);
+      toast(u.blocked ? `@${u.username} unblocked.` : `@${u.username} blocked. They can no longer log in or act.`);
+      load();
+    } catch (e) { toast(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function forceComplete(t) {
+    try {
+      setBusy(true);
+      await apiAdminComplete(t.id);
+      toast(`Record @${t.senderUsername} ↔ @${t.targetUsername} marked Completed. Both sides notified.`);
+      load();
+    } catch (e) { toast(e.message); }
+    finally { setBusy(false); }
+  }
+
+  const ql = q.trim().toLowerCase();
+  const shownUsers = users.filter((u) =>
+    !ql || u.username.toLowerCase().includes(ql) || String(u.wallet || "").toLowerCase().includes(ql));
+  const shownTxns = txns.filter((t) =>
+    (status === "all" || (status === "pending" ? t.status !== "completed" : t.status === "completed")) &&
+    (!ql || String(t.senderUsername).toLowerCase().includes(ql) || String(t.targetUsername).toLowerCase().includes(ql)));
+  const pending = txns.filter((t) => t.status !== "completed").length;
+
+  return (
+    <div className="rise mt-4 grid gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {[["Members", users.length], ["Records", txns.length], ["Pending", pending], ["Completed", txns.length - pending]].map(([l, v]) => (
+          <Card key={l} className="p-4 text-center">
+            <div className="text-2xl font-black">{v}</div>
+            <div className="text-[11px] text-slate-500">{l}</div>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-black">Members</h2>
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">⌕</span>
+            <input className={`${inputCls} mono pl-9 text-xs sm:w-64`} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search username or wallet…" />
+          </div>
+        </div>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[680px] text-left text-sm">
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+                <th className="pb-2 pr-3">Member</th>
+                <th className="pb-2 pr-3">Wallet</th>
+                <th className="pb-2 pr-3">Tier</th>
+                <th className="pb-2 pr-3">Status</th>
+                <th className="pb-2">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shownUsers.map((u) => (
+                <tr key={u.id} className="border-t border-white/5">
+                  <td className="py-2.5 pr-3">
+                    <span className="font-bold">@{u.username}</span>
+                    {u.role === "admin" && <span className="ml-2 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold text-violet-300">ADMIN</span>}
+                    <div className="mono text-[10px] text-slate-500">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : ""}</div>
+                  </td>
+                  <td className="mono max-w-[220px] truncate py-2.5 pr-3 text-[11px] text-slate-400" title={u.wallet}>{u.wallet}</td>
+                  <td className="py-2.5 pr-3 text-xs">{u.plan ? (planById(u.plan)?.name || u.plan) : <span className="text-slate-600">—</span>}</td>
+                  <td className="py-2.5 pr-3">
+                    {u.blocked
+                      ? <span className="rounded-full border border-rose-400/30 bg-rose-500/15 px-2.5 py-1 text-xs font-bold text-rose-300">Blocked</span>
+                      : <span className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-300">Active</span>}
+                  </td>
+                  <td className="py-2.5">
+                    {u.role !== "admin" && (
+                      <button className={btnGhost} disabled={busy} onClick={() => toggleBlock(u)}>
+                        {u.blocked ? "Unblock" : "Block"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {shownUsers.length === 0 && <div className="py-6 text-center text-xs text-slate-500">No members match that search.</div>}
+        </div>
+      </Card>
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-black">All records</h2>
+          <div className="flex gap-1.5">
+            {[["pending", "Pending"], ["completed", "Completed"], ["all", "All"]].map(([v, l]) => (
+              <button key={v} onClick={() => setStatus(v)}
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${status === v ? "bg-gradient-to-r from-cyan-400 to-violet-500 text-[#06121f]" : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[680px] text-left text-sm">
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+                <th className="pb-2 pr-3">Date</th>
+                <th className="pb-2 pr-3">Pair</th>
+                <th className="pb-2 pr-3">Tier</th>
+                <th className="pb-2 pr-3">Status</th>
+                <th className="pb-2">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shownTxns.slice(0, 100).map((t) => (
+                <tr key={t.id} className="border-t border-white/5">
+                  <td className="py-2.5 pr-3 text-xs text-slate-400">{t.createdAt ? new Date(t.createdAt).toLocaleString() : "—"}</td>
+                  <td className="py-2.5 pr-3 text-xs font-bold">@{t.senderUsername} <span className="text-slate-500">→</span> @{t.targetUsername}</td>
+                  <td className="py-2.5 pr-3 font-black">${t.amount}</td>
+                  <td className="py-2.5 pr-3"><Badge status={t.status} /></td>
+                  <td className="py-2.5">
+                    {t.status !== "completed"
+                      ? <button className={btnGhost} disabled={busy} onClick={() => forceComplete(t)}>Complete</button>
+                      : <span className="text-[11px] text-slate-600">{t.completedBy === "admin" ? "by admin" : `verified $${t.verifiedAmount}`}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {shownTxns.length === 0 && <div className="py-6 text-center text-xs text-slate-500">No records in this view.</div>}
+        </div>
+      </Card>
     </div>
   );
 }
@@ -743,6 +899,15 @@ export default function App() {
         </div>
       ) : !me ? (
         <AuthScreen onAuthed={async () => setMe(await apiMe())} toast={toast} />
+      ) : me.blocked ? (
+        <div className="mx-auto grid min-h-[60vh] w-full max-w-md place-items-center px-4">
+          <Card className="rise w-full border-rose-400/30 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-rose-500/15 text-2xl">⊘</div>
+            <h2 className="mt-3 text-xl font-black">Account blocked</h2>
+            <p className="mt-1 text-sm text-slate-400">This account has been blocked by an admin and can no longer access the ledger. Contact support if you think this is a mistake.</p>
+            <button className={`${btnGhost} mt-4 w-full`} onClick={() => { apiLogout(); window.location.reload(); }}>Back to login</button>
+          </Card>
+        </div>
       ) : (
         <Dashboard me={me} setMe={setMe} toast={toast} />
       )}

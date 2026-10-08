@@ -8,6 +8,7 @@ export default async function handler(req, res) {
   try {
     const me = await getAuthUser(req);
     if (!me) return send(res, 401, { error: "Not authenticated." });
+    if (me.blocked) return send(res, 403, { error: "This account has been blocked. Contact support." });
     const { txnId, verifiedAmount } = await readJson(req);
     const amt = Number(verifiedAmount);
     if (!amt || amt <= 0) return send(res, 400, { error: "Select the exact amount you verified receiving." });

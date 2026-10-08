@@ -7,6 +7,7 @@ export default async function handler(req, res) {
   try {
     const me = await getAuthUser(req);
     if (!me) return send(res, 401, { error: "Not authenticated." });
+    if (me.blocked) return send(res, 403, { error: "This account has been blocked. Contact support." });
     const { currentPassword, newPassword } = await readJson(req);
     const ok = await verifyPassword(String(currentPassword || ""), me.passwordHash);
     if (!ok) return send(res, 401, { error: "Current password is incorrect." });

@@ -1,4 +1,4 @@
-import { getDb, send, readJson, cleanUser } from "./_lib/mongo.js";
+import { getDb, send, readJson, cleanUserPublic } from "./_lib/mongo.js";
 import { getAuthUser } from "./_lib/auth.js";
 
 export const PLANS = [
@@ -17,6 +17,7 @@ export default async function handler(req, res) {
   try {
     const me = await getAuthUser(req);
     if (!me) return send(res, 401, { error: "Not authenticated." });
+    if (me.blocked) return send(res, 403, { error: "This account has been blocked. Contact support." });
     const { planId, targetWallet } = await readJson(req);
     const plan = PLANS.find((p) => p.id === planId);
     if (!plan) return send(res, 400, { error: "Select a valid tier first." });
@@ -65,7 +66,7 @@ export default async function handler(req, res) {
 
     return send(res, 200, {
       txn: { id: String(r.insertedId), ...txnDoc },
-      target: cleanUser(target),
+      target: cleanUserPublic(target),
     });
   } catch (e) {
     return send(res, 500, { error: e.message || "Deposit failed" });
