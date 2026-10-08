@@ -20,6 +20,10 @@ export default async function handler(req, res) {
       patch.plan = plan;
     }
     const db = await getDb();
+    if (patch.wallet && patch.wallet !== me.wallet) {
+      const taken = await db.collection("users").findOne({ wallet: patch.wallet });
+      if (taken) return send(res, 409, { error: "That wallet text is already registered to another member." });
+    }
     await db.collection("users").updateOne({ _id: me._id }, { $set: patch });
     const u = await db.collection("users").findOne({ _id: me._id });
     return send(res, 200, { user: cleanUser(u) });

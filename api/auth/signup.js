@@ -16,6 +16,9 @@ export default async function handler(req, res) {
     const db = await getDb();
     const exists = await db.collection("users").findOne({ usernameLower: name.toLowerCase() });
     if (exists) return send(res, 409, { error: "That username is already taken. Pick a unique username." });
+    // One wallet text = one member, so pasted addresses always resolve to the right profile.
+    const walletTaken = await db.collection("users").findOne({ wallet: wall });
+    if (walletTaken) return send(res, 409, { error: "That wallet text is already registered to another member." });
 
     const generatedPassword = generatePassword(12);
     const passwordHash = await hashPassword(generatedPassword);

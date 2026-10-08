@@ -3,7 +3,7 @@ import { PLANS, planById, planAmounts, statusMeta } from "./lib/store";
 import {
   apiSignup, apiLogin, apiMe, apiLogout, apiChangePassword, apiUpdateProfile,
   apiDeposit, apiTxns, apiNotifs, apiMarkRead, apiMarkAllRead, apiAck,
-  exportLedgerJSON, remoteAvailable, LOCAL_DEMO_CREDS,
+  exportLedgerJSON, remoteAvailable, LOCAL_DEMO_CREDS, apiLookupPartner,
 } from "./lib/api";
 
 const DISCLAIMER = "This dashboard is a manual ledger tracker. No financial transactions take place on this platform.";
@@ -137,15 +137,15 @@ function AuthScreen({ onAuthed, toast }) {
           </h1>
           <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-slate-400">
             <b className="text-slate-100">LedgerBook P2P</b> is the shared notebook for trusted exchange circles.
-            When two people settle something offline, both sides leave a trace here — the sender logs the pairing
-            with one tap on <b className="text-slate-200">Copy</b>, the receiver confirms with <b className="text-slate-200">Acknowledge</b>,
+            When two people settle something offline, both sides leave a trace here — you paste the wallet text your partner shared
+            (over WhatsApp or in person), confirm their profile, and send a request; the receiver then confirms with <b className="text-slate-200">Acknowledge</b>,
             and the ledger glows green. Simple, transparent, dispute-free.
           </p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             {[
               { t: "You pick a name", d: "Choose any username. Your password is generated for you — strong by default.", i: "◎" },
-              { t: "Pair in one tap", d: "Pick a tier, press Deposit, get your partner's public wallet text instantly.", i: "◇" },
+              { t: "You bring the partner", d: "Agree on WhatsApp or in person, paste their wallet text, and we show their profile.", i: "◇" },
               { t: "Both sides confirm", d: "Nothing turns green until the receiver verifies and acknowledges.", i: "✓" },
             ].map((f) => (
               <div key={f.t} className="glass rounded-2xl p-4">
@@ -238,8 +238,8 @@ function AuthScreen({ onAuthed, toast }) {
       <div className="rise rise-3 mt-8 grid gap-3 md:grid-cols-4">
         {[
           ["01", "Join & save password", "Pick a username, paste your wallet text, keep the generated password."],
-          ["02", "Pick a tier & Deposit", "Choose the tier that matches your offline arrangement. We find your partner."],
-          ["03", "Copy the wallet text", "One tap copies your partner's public address — and logs the pairing."],
+          ["02", "Agree outside the app", "Settle the tier with your partner on WhatsApp or in person and get their wallet text."],
+          ["03", "Paste it here & request", "We pull up their profile for you to confirm — then you send a pairing request."],
           ["04", "Partner acknowledges", "They verify offline, confirm here, and your ledger turns green."],
         ].map(([n, t, d]) => (
           <div key={n} className="glass rounded-2xl p-4">
@@ -253,17 +253,17 @@ function AuthScreen({ onAuthed, toast }) {
   );
 }
 
-/* ================= Copy modal ================= */
-function CopyModal({ match, plan, onClose, toast, refresh }) {
+/* ================= Request-sent modal ================= */
+function RequestModal({ receipt, plan, onClose, toast }) {
   const [copied, setCopied] = useState(false);
-  if (!match || !plan) return null;
+  if (!receipt || !plan) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center">
       <div className="glass rise w-full max-w-lg rounded-3xl p-6 shadow-2xl">
         <div className="mb-1 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-black">Partner found</h3>
-            <p className="text-xs text-slate-400"><b className="text-slate-200">{plan.name} · ${plan.amount}</b> with <b className="text-cyan-300">@{match.targetUsername}</b></p>
+            <h3 className="text-lg font-black">Request sent to @{receipt.targetUsername}</h3>
+            <p className="text-xs text-slate-400"><b className="text-slate-200">{plan.name} · ${plan.amount}</b> · they've been notified in their inbox</p>
           </div>
           <button onClick={onClose} className="rounded-lg px-2 py-1 text-slate-400 hover:bg-white/10">✕</button>
         </div>
@@ -272,21 +272,19 @@ function CopyModal({ match, plan, onClose, toast, refresh }) {
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Their public wallet text</span>
             <span className="text-[10px] text-slate-600">text only · nothing connects</span>
           </div>
-          <div className="mono break-all text-sm text-emerald-300">{match.targetWalletSnapshot}</div>
+          <div className="mono break-all text-sm text-emerald-300">{receipt.targetWalletSnapshot}</div>
         </div>
         <div className="mt-4 flex gap-2">
           <button
-            className={`${btnPrimary} flex-1`}
-            onClick={() => copyText(match.targetWalletSnapshot, () => { setCopied(true); toast(`Paired with @${match.targetUsername} — now settle it offline.`); refresh(); })}
-          >{copied ? "✓ Copied & logged" : "⧉ Copy address & log pairing"}</button>
-          <button className={btnGhost} onClick={onClose}>{copied ? "Done" : "Later"}</button>
+            className={`${btnGhost} flex-1`}
+            onClick={() => copyText(receipt.targetWalletSnapshot, () => { setCopied(true); toast("Address copied for your own records."); })}
+          >{copied ? "✓ Copied" : "⧉ Copy address"}</button>
+          <button className={btnPrimary} onClick={onClose}>Done</button>
         </div>
-        {copied && (
-          <div className="mt-3 rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3 text-xs leading-relaxed text-emerald-200">
-            Pairing recorded: <b>you → @{match.targetUsername}</b> · {plan.name} ${plan.amount}.<br />
-            Next: settle it <b>outside this app</b>, then your partner acknowledges here and the entry turns <b>Completed</b>.
-          </div>
-        )}
+        <div className="mt-3 rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3 text-xs leading-relaxed text-emerald-200">
+          Pairing recorded: <b>you → @{receipt.targetUsername}</b> · {plan.name} ${plan.amount} · status <b>Awaiting Receiver Confirmation</b>.<br />
+          Next: settle it <b>outside this app</b>, then your partner acknowledges here and the entry turns <b>Completed</b>.
+        </div>
         <p className="mt-3 text-[11px] text-slate-500">{DISCLAIMER}</p>
       </div>
     </div>
@@ -297,7 +295,11 @@ function CopyModal({ match, plan, onClose, toast, refresh }) {
 function Dashboard({ me, setMe, toast }) {
   const [tab, setTab] = useState("overview");
   const [planPick, setPlanPick] = useState(me.plan || "bronze");
-  const [match, setMatch] = useState(null);
+  const [receipt, setReceipt] = useState(null);
+  const [partnerWallet, setPartnerWallet] = useState("");
+  const [partner, setPartner] = useState(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [requesting, setRequesting] = useState(false);
   const [ackAmounts, setAckAmounts] = useState({});
   const [txns, setTxns] = useState([]);
   const [notifs, setNotifs] = useState([]);
@@ -333,18 +335,33 @@ function Dashboard({ me, setMe, toast }) {
   const pending = txns.filter((t) => t.status !== "completed");
   const received = txns.filter((t) => t.targetId === me.id);
 
-  async function doDeposit() {
+  async function doLookup() {
     try {
+      setLookingUp(true);
+      const j = await apiLookupPartner(partnerWallet);
+      setPartner(j.partner);
+      toast(`Found @${j.partner.username} — check it's the right person.`);
+    } catch (e) { setPartner(null); toast(e.message); }
+    finally { setLookingUp(false); }
+  }
+
+  async function doRequest() {
+    if (!partner) return;
+    try {
+      setRequesting(true);
       const plan = planById(planPick);
       if (me.plan !== planPick) {
         const u = await apiUpdateProfile({ plan: planPick });
         setMe(u);
       }
-      const res = await apiDeposit(planPick);
-      setMatch({ ...res.txn, targetWalletSnapshot: res.txn.targetWalletSnapshot });
-      toast(`Partner found: @${res.target.username} on ${plan.name}.`);
+      const res = await apiDeposit(planPick, partnerWallet);
+      setReceipt({ ...res.txn, targetWalletSnapshot: res.txn.targetWalletSnapshot });
+      setPartner(null);
+      setPartnerWallet("");
+      toast(`Request sent to @${res.target.username} for ${plan.name}.`);
       refresh();
     } catch (e) { toast(e.message); }
+    finally { setRequesting(false); }
   }
 
   async function doAck(txnId) {
@@ -461,8 +478,8 @@ function Dashboard({ me, setMe, toast }) {
       {!loading && tab === "plans" && (
         <div className="rise mt-4 grid gap-4">
           <Card>
-            <h2 className="text-lg font-black">Pick your tier, meet your partner</h2>
-            <p className="text-xs text-slate-400">Choose the tier that mirrors your offline arrangement — pairing takes seconds.</p>
+            <h2 className="text-lg font-black">1 · Pick your tier</h2>
+            <p className="text-xs text-slate-400">Choose the tier that mirrors the arrangement you already agreed with your partner.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {PLANS.map((p) => (
                 <button key={p.id} onClick={() => setPlanPick(p.id)}
@@ -479,20 +496,67 @@ function Dashboard({ me, setMe, toast }) {
               <select className={`${inputCls} sm:max-w-xs`} value={planPick} onChange={(e) => setPlanPick(e.target.value)}>
                 {PLANS.map((p) => <option key={p.id} value={p.id}>{p.name} — ${p.amount} · {p.tag}</option>)}
               </select>
-              <button className={btnPrimary} onClick={doDeposit}>Deposit — find my partner</button>
             </div>
-            <p className="mt-2 text-[11px] text-slate-600">Deposit here only means "record my intent and reveal my partner's public wallet text". Settle everything outside the app.</p>
+          </Card>
+          <Card className="border-cyan-400/20">
+            <h2 className="text-lg font-black">2 · Find your partner</h2>
+            <p className="text-xs leading-relaxed text-slate-400">
+              Got their Trust Wallet address on <b className="text-slate-200">WhatsApp or in person</b>? Paste it in the search bar —
+              we'll show you the profile of the person it belongs to, so you can confirm before requesting.
+            </p>
+            <form
+              className="mt-3 flex flex-col gap-2 sm:flex-row"
+              onSubmit={(e) => { e.preventDefault(); doLookup(); }}
+            >
+              <div className="relative flex-1">
+                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">⌕</span>
+                <input
+                  className={`${inputCls} mono pl-9 text-xs`}
+                  value={partnerWallet}
+                  onChange={(e) => { setPartnerWallet(e.target.value); setPartner(null); }}
+                  placeholder="Paste Trust Wallet address…  (e.g. T…)"
+                  autoComplete="off"
+                  spellCheck="false"
+                />
+              </div>
+              <button type="submit" className={btnPrimary} disabled={lookingUp || !partnerWallet.trim()}>
+                {lookingUp ? "Searching…" : "Search"}
+              </button>
+            </form>
+            {partner && (
+              <div className="rise mt-3 rounded-2xl border border-emerald-400/30 bg-emerald-400/5 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-cyan-400 to-violet-500 text-lg font-black text-[#06121f]">
+                    {partner.username.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-base font-black">@{partner.username}</div>
+                    <div className="text-xs text-slate-400">
+                      {partner.planName ? <>on <b className="text-slate-200">{partner.planName} tier</b></> : "no tier selected yet"}
+                    </div>
+                  </div>
+                </div>
+                <div className="mono mt-3 break-all rounded-xl bg-black/40 p-2.5 text-[11px] text-emerald-300">{partner.wallet}</div>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <button className={btnPrimary} onClick={doRequest} disabled={requesting}>
+                    {requesting ? "Sending…" : `Send pairing request · ${planById(planPick).name} $${planById(planPick).amount}`}
+                  </button>
+                  <button className={btnGhost} onClick={() => { setPartner(null); setPartnerWallet(""); }}>Not them — clear</button>
+                </div>
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-slate-600">Requesting only writes a record here and notifies them — settle everything outside the app.</p>
           </Card>
           <Card>
             <h2 className="text-lg font-black">What happens next?</h2>
             <ol className="mt-2 grid gap-2 text-xs leading-relaxed text-slate-400 md:grid-cols-4">
-              <li className="rounded-xl bg-black/30 p-3"><b className="text-cyan-300">1 ·</b> We find another member on this tier and show you their public wallet text.</li>
-              <li className="rounded-xl bg-black/30 p-3"><b className="text-cyan-300">2 ·</b> You tap <b className="text-slate-200">Copy</b> — the pairing is quietly written to the ledger.</li>
-              <li className="rounded-xl bg-black/30 p-3"><b className="text-cyan-300">3 ·</b> Your partner gets a note: <span className="italic">"@{me.username} paired with you."</span></li>
+              <li className="rounded-xl bg-black/30 p-3"><b className="text-cyan-300">1 ·</b> You agree on a tier with your partner outside the app and get their wallet text.</li>
+              <li className="rounded-xl bg-black/30 p-3"><b className="text-cyan-300">2 ·</b> You paste it here, confirm their profile, and send the request.</li>
+              <li className="rounded-xl bg-black/30 p-3"><b className="text-cyan-300">3 ·</b> Your partner gets a note: <span className="italic">"@{me.username} sent you a pairing request."</span></li>
               <li className="rounded-xl bg-black/30 p-3"><b className="text-cyan-300">4 ·</b> They verify offline, press Acknowledge — both ledgers turn green.</li>
             </ol>
           </Card>
-          <LedgerTable txns={sent.slice(0, 8)} me={me} title="Pairings you started" />
+          <LedgerTable txns={sent.slice(0, 8)} me={me} title="Requests you sent" />
         </div>
       )}
 
@@ -516,7 +580,7 @@ function Dashboard({ me, setMe, toast }) {
             </div>
             <button className={btnGhost} onClick={async () => { await apiMarkAllRead(); refresh(); }}>Mark all read</button>
           </Card>
-          {notifs.length === 0 && <Card><div className="text-sm text-slate-400">Nothing yet. When someone copies your wallet text, you'll see it here with a confirm box.</div></Card>}
+          {notifs.length === 0 && <Card><div className="text-sm text-slate-400">Nothing yet. When someone sends you a pairing request, you'll see it here with a confirm box.</div></Card>}
           {notifs.map((n) => {
             const txn = txns.find((t) => t.id === n.txnId);
             const isReceiver = txn && txn.targetId === me.id;
@@ -607,8 +671,8 @@ function Dashboard({ me, setMe, toast }) {
         </div>
       )}
 
-      {match && (
-        <CopyModal match={match} plan={planById(match.planId)} onClose={() => setMatch(null)} toast={toast} refresh={refresh} />
+      {receipt && (
+        <RequestModal receipt={receipt} plan={planById(receipt.planId)} onClose={() => setReceipt(null)} toast={toast} />
       )}
     </div>
   );

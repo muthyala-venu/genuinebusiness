@@ -106,6 +106,8 @@ const local = {
     const users = lread(LK.users, []);
     if (users.some((u) => u.username.toLowerCase() === username.toLowerCase()))
       throw new Error("That username is already taken. Pick a unique username.");
+    if (users.some((u) => u.wallet === wallet))
+      throw new Error("That wallet text is already registered to another member.");
     const generatedPassword = localGeneratePassword(12);
     const user = { id: uid("u"), username, passwordHash: lhash(generatedPassword), wallet, plan: null, createdAt: new Date().toISOString() };
     users.push(user);
@@ -141,13 +143,32 @@ const local = {
   },
   updateProfile(patch) {
     const s = lread(LK.session, null);
-    const users = lread(LK.users, []).map((u) => (u.id === s?.userId ? { ...u, ...patch } : u));
-    lwrite(LK.users, users);
-    return strip(users.find((u) => u.id === s?.userId));
+    const users = lread(LK.users, []);
+    if (patch.wallet) {
+      const clash = users.find((u) => u.wallet === String(patch.wallet).trim() && u.id !== s?.userId);
+      if (clash) throw new Error("That wallet text is already registered to another member.");
+    }
+    const next = users.map((u) => (u.id === s?.userId ? { ...u, ...patch } : u));
+    lwrite(LK.users, next);
+    return strip(next.find((u) => u.id === s?.userId));
   },
-  deposit({ planId }) {
+  lookupPartner({ wallet }) {
+    seedLocal();
+    const wall = String(wallet || "").trim();
+    if (wall.length < 10) throw new Error("Paste your partner's full wallet text first.");
+    const s = lread(LK.session, null);
+    const users = lread(LK.users, []);
+    const target = users.find((u) => u.wallet === wall);
+    if (!target) throw new Error("No member found with that wallet text. Check for extra spaces or ask your partner to re-send it.");
+    if (target.id === s?.userId) throw new Error("That's your own wallet text — paste your partner's instead.");
+    const plan = planById(target.plan);
+    return { username: target.username, plan: target.plan || null, planName: plan ? plan.name : null, wallet: target.wallet };
+  },
+  deposit({ planId, targetWallet }) {
     const plan = planById(planId);
-    if (!plan) throw new Error("Select a valid plan tier.");
+    if (!plan) throw new Error("Select a valid tier first.");
+    const wall = String(targetWallet || "").trim();
+    if (wall.length < 10) throw new Error("Paste your partner's wallet text first.");
     const s = lread(LK.session, null);
     const users = lread(LK.users, []);
     const sender = users.find((u) => u.id === s?.userId);
@@ -156,16 +177,9 @@ const local = {
       sender.plan = planId;
       lwrite(LK.users, users);
     }
-    const others = users.filter((u) => u.id !== sender.id);
-    if (!others.length) throw new Error("No other users yet. Ask a friend to sign up so matching can find a Target User.");
-    const pool = others.filter((u) => u.plan === planId).length
-      ? others.filter((u) => u.plan === planId) : others;
-    const txns = lread(LK.txns, []);
-    const prior = txns.filter((t) => t.senderId === sender.id && t.planId === planId);
-    const lastTarget = prior[0]?.targetId;
-    const cands = pool.filter((u) => u.id !== lastTarget);
-    const from = cands.length ? cands : pool;
-    const target = from[prior.length % from.length];
+    const target = users.find((u) => u.wallet === wall);
+    if (!target) throw new Error("No member found with that wallet text. Check for extra spaces or ask your partner to re-send it.");
+    if (target.id === sender.id) throw new Error("That's your own wallet text — paste your partner's instead.");
     const txn = {
       id: uid("txn"), senderId: sender.id, senderUsername: sender.username,
       targetId: target.id, targetUsername: target.username, targetWalletSnapshot: target.wallet,
@@ -173,11 +187,12 @@ const local = {
       status: "awaiting_confirmation", copyLoggedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(), completedAt: null, verifiedAmount: null,
     };
+    const txns = lread(LK.txns, []);
     lwrite(LK.txns, [txn, ...txns]);
     const notifs = lread(LK.notifs, []);
     lwrite(LK.notifs, [{
       id: uid("notif"), userId: target.id, txnId: txn.id,
-      text: `User ${sender.username} has copied your wallet address for the ${plan.name} tier.`,
+      text: `User ${sender.username} sent you a pairing request for the ${plan.name} tier.`,
       read: false, createdAt: new Date().toISOString(),
     }, ...notifs]);
     return { txn, target: strip(target) };
@@ -285,9 +300,14 @@ export async function apiUpdateProfile(patch) {
   return u;
 }
 
-export async function apiDeposit(planId) {
-  if (await useRemote()) return call("/api/deposit", { method: "POST", body: { planId } });
-  return local.deposit({ planId });
+export async function apiLookupPartner(wallet) {
+  if (await useRemote()) return call("/api/partner/lookup", { method: "POST", body: { wallet } });
+  return { partner: local.lookupPartner({ wallet }) };
+}
+
+export async function apiDeposit(planId, targetWallet) {
+  if (await useRemote()) return call("/api/deposit", { method: "POST", body: { planId, targetWallet } });
+  return local.deposit({ planId, targetWallet });
 }
 
 export async function apiTxns() {

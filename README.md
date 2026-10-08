@@ -3,6 +3,12 @@
 Manual P2P bookkeeping ledger. No money moves here — purely visual record-keeping.
 **Username is chosen by the user; password is generated randomly by the system** (shown once at signup, changeable in Account → Change password).
 
+## How pairing works (manual — no auto-matching)
+1. Two members agree on a tier **outside the app** (WhatsApp, in person, …) and share the public wallet text.
+2. The sender pastes that wallet text into Tiers & Pairing → the app resolves it to a member profile (`POST /api/partner/lookup`).
+3. The sender confirms the profile and sends a pairing request (`POST /api/deposit { planId, targetWallet }`) — one wallet text belongs to exactly one member.
+4. The partner gets an inbox note and acknowledges after verifying offline → status flips to Completed.
+
 ## Stack
 - Frontend: React + Vite + Tailwind (PWA, `public/manifest.webmanifest` + `public/sw.js`)
 - Backend: Vercel serverless (`/api/*`) + MongoDB (`users`, `txns`, `notifs`, `copylogs`)

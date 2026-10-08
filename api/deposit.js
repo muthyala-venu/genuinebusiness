@@ -2,22 +2,26 @@ import { getDb, send, readJson, cleanUser } from "./_lib/mongo.js";
 import { getAuthUser } from "./_lib/auth.js";
 
 export const PLANS = [
-  { id: "starter", name: "Starter Tier", amount: 50 },
-  { id: "bronze", name: "Bronze Tier", amount: 150 },
-  { id: "silver", name: "Silver Tier", amount: 350 },
-  { id: "gold", name: "Gold Tier", amount: 750 },
-  { id: "platinum", name: "Platinum Tier", amount: 1500 },
+  { id: "starter", name: "Starter", amount: 50 },
+  { id: "bronze", name: "Bronze", amount: 150 },
+  { id: "silver", name: "Silver", amount: 350 },
+  { id: "gold", name: "Gold", amount: 750 },
+  { id: "platinum", name: "Platinum", amount: 1500 },
 ];
 
-// POST /api/deposit { planId } -> { txn, target }
+// POST /api/deposit { planId, targetWallet } -> { txn, target }
+// Manual pairing: sender pastes the partner's wallet text (shared outside the app).
+// We resolve it to a member, show their profile in the UI, and log the request here.
 export default async function handler(req, res) {
   if (req.method !== "POST") return send(res, 405, { error: "Method not allowed" });
   try {
     const me = await getAuthUser(req);
     if (!me) return send(res, 401, { error: "Not authenticated." });
-    const { planId } = await readJson(req);
+    const { planId, targetWallet } = await readJson(req);
     const plan = PLANS.find((p) => p.id === planId);
-    if (!plan) return send(res, 400, { error: "Select a valid plan tier." });
+    if (!plan) return send(res, 400, { error: "Select a valid tier first." });
+    const wall = String(targetWallet || "").trim();
+    if (wall.length < 10) return send(res, 400, { error: "Paste your partner's wallet text first." });
 
     const db = await getDb();
     if (me.plan !== planId) {
@@ -25,19 +29,11 @@ export default async function handler(req, res) {
       me.plan = planId;
     }
 
-    const others = await db.collection("users").find({ _id: { $ne: me._id } }).toArray();
-    if (others.length === 0)
-      return send(res, 409, { error: "No other users in the ledger yet. Ask a friend to sign up so matching can find a Target User." });
-
-    const samePlan = others.filter((u) => u.plan === planId);
-    const pool = samePlan.length > 0 ? samePlan : others;
-    const prior = await db.collection("txns")
-      .find({ senderId: String(me._id), planId })
-      .sort({ createdAt: -1 }).limit(20).toArray();
-    const lastTarget = prior[0]?.targetId;
-    const candidates = pool.filter((u) => String(u._id) !== lastTarget);
-    const pickFrom = candidates.length > 0 ? candidates : pool;
-    const target = pickFrom[prior.length % pickFrom.length];
+    const target = await db.collection("users").findOne({ wallet: wall });
+    if (!target)
+      return send(res, 404, { error: "No member found with that wallet text. Check for extra spaces or ask your partner to re-send it." });
+    if (String(target._id) === String(me._id))
+      return send(res, 400, { error: "That's your own wallet text — paste your partner's instead." });
 
     const now = new Date().toISOString();
     const senderId = String(me._id);
@@ -62,7 +58,7 @@ export default async function handler(req, res) {
     await db.collection("notifs").insertOne({
       userId: targetId,
       txnId: String(r.insertedId),
-      text: `User ${me.usernameDisplay || me.username} has copied your wallet address for the ${plan.name} tier.`,
+      text: `User ${me.usernameDisplay || me.username} sent you a pairing request for the ${plan.name} tier.`,
       read: false,
       createdAt: now,
     });
