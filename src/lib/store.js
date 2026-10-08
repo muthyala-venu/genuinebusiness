@@ -2,11 +2,11 @@
 // Data operations live in src/lib/api.js (MongoDB via /api with offline fallback).
 
 export const PLANS = [
-  { id: "starter",  name: "Starter Tier",   amount: 50,  color: "#38bdf8", desc: "Entry manual tracking tier" },
-  { id: "bronze",   name: "Bronze Tier",    amount: 150, color: "#f59e0b", desc: "Small-circle ledger tier" },
-  { id: "silver",   name: "Silver Tier",    amount: 350, color: "#a78bfa", desc: "Mid-volume tracking tier" },
-  { id: "gold",     name: "Gold Tier",      amount: 750, color: "#facc15", desc: "High-volume tracking tier" },
-  { id: "platinum", name: "Platinum Tier",  amount: 1500, color: "#34d399", desc: "Top manual ledger tier" },
+  { id: "starter",  name: "Starter",   amount: 50,  color: "#38bdf8", tag: "First steps",    desc: "For new circles learning the ropes — small, simple records." },
+  { id: "bronze",   name: "Bronze",    amount: 150, color: "#f59e0b", tag: "Most chosen",    desc: "The everyday tier for active pairs who log often." },
+  { id: "silver",   name: "Silver",    amount: 350, color: "#a78bfa", tag: "Growing circles", desc: "For busier circles that need a tidy, trusted trail." },
+  { id: "gold",     name: "Gold",      amount: 750, color: "#facc15", tag: "High volume",    desc: "For serious record-keepers with frequent pairings." },
+  { id: "platinum", name: "Platinum",  amount: 1500, color: "#34d399", tag: "Inner circle",   desc: "Top tier for the most committed tracking circles." },
 ];
 
 export const planById = (id) => PLANS.find((p) => p.id === id);

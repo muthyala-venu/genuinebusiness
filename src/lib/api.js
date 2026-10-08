@@ -31,15 +31,30 @@ async function call(path, { method = "GET", body } = {}) {
   const headers = { "Content-Type": "application/json" };
   const t = getToken();
   if (t) headers.Authorization = `Bearer ${t}`;
-  const r = await fetch(path, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let r;
+  try {
+    r = await fetch(path, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    throw friendlyError(e);
+  }
   let j = {};
   try { j = await r.json(); } catch { /* empty */ }
-  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  if (!r.ok) throw friendlyError(new Error(j.error || `Request failed (${r.status})`));
   return j;
+}
+
+// Never surface backend internals (env names, drivers, network jargon) in UI toasts.
+function friendlyError(err) {
+  const msg = String(err?.message || err || "");
+  if (/is not set\.|MongoServer|Mongo_|E11000|ECONN|ENOTFOUND|timed out|timing out/i.test(msg))
+    return new Error("Service is having trouble right now. Please try again in a moment.");
+  if (/failed to fetch|networkerror|network request failed|load failed|fetch failed/i.test(msg))
+    return new Error("You're offline or can't reach the service. Check your connection and retry.");
+  return err instanceof Error ? err : new Error(msg || "Something went wrong. Please try again.");
 }
 
 const cache = {
