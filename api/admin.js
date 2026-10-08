@@ -38,11 +38,33 @@ export default async function handler(req, res) {
       if (!txn) return send(res, 404, { error: "Record not found." });
       if (txn.status === "completed") return send(res, 409, { error: "This record is already completed." });
       const now = new Date().toISOString();
+      // Coin-priced record: settle coins too when the buyer still holds them.
+      let coinNote = "";
+      if (txn.schemeId && txn.coinAmount > 0) {
+        const buyer = await db.collection("memberships").findOne({ schemeId: txn.schemeId, userId: txn.senderId });
+        const seller = await db.collection("memberships").findOne({ schemeId: txn.schemeId, userId: txn.targetId });
+        if (buyer && seller && buyer.balance >= txn.coinAmount) {
+          await db.collection("memberships").updateOne({ _id: buyer._id }, { $inc: { balance: -txn.coinAmount } });
+          await db.collection("memberships").updateOne({ _id: seller._id }, { $inc: { balance: txn.coinAmount } });
+          await db.collection("coinlogs").insertMany([
+            { userId: txn.senderId, schemeId: txn.schemeId, schemeName: txn.schemeName, kind: "spend", amount: -txn.coinAmount, balanceAfter: buyer.balance - txn.coinAmount, ref: String(txn._id), at: now },
+            { userId: txn.targetId, schemeId: txn.schemeId, schemeName: txn.schemeName, kind: "earn", amount: txn.coinAmount, balanceAfter: seller.balance + txn.coinAmount, ref: String(txn._id), at: now },
+          ]);
+        } else {
+          coinNote = " Coin settlement is pending — the buyer no longer holds enough coins.";
+        }
+        if (txn.offerId) {
+          await db.collection("offers").updateOne(
+            { _id: new ObjectId(txn.offerId) },
+            { $set: { status: "closed", closedAt: now } }
+          );
+        }
+      }
       await db.collection("txns").updateOne(
         { _id: txn._id },
         { $set: { status: "completed", verifiedAmount: txn.amount, completedAt: now, completedBy: "admin" } }
       );
-      const note = `An admin marked your ${txn.planName} record (@${txn.senderUsername} ↔ @${txn.targetUsername}) as Completed.`;
+      const note = `An admin marked your ${txn.planName} record (@${txn.senderUsername} ↔ @${txn.targetUsername}) as Completed.${coinNote}`;
       await db.collection("notifs").insertMany([
         { userId: txn.senderId, txnId: String(txn._id), text: note, read: false, createdAt: now },
         { userId: txn.targetId, txnId: String(txn._id), text: note, read: false, createdAt: now },

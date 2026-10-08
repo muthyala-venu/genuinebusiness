@@ -18,6 +18,8 @@ export async function getDb() {
   await cachedDb.collection("txns").createIndex({ targetId: 1, createdAt: -1 }).catch(() => {});
   await cachedDb.collection("notifs").createIndex({ userId: 1, createdAt: -1 }).catch(() => {});
   await cachedDb.collection("offers").createIndex({ status: 1, createdAt: -1 }).catch(() => {});
+  await cachedDb.collection("memberships").createIndex({ schemeId: 1, userId: 1 }, { unique: true }).catch(() => {});
+  await cachedDb.collection("coinlogs").createIndex({ userId: 1, at: -1 }).catch(() => {});
   return cachedDb;
 }
 

@@ -11,6 +11,10 @@ Manual P2P bookkeeping ledger. No money moves here — purely visual record-keep
   send a pairing request. One wallet text belongs to exactly one member.
 - **Two-sided diary** — every record moves Address shared → Awaiting confirmation → Completed,
   with record IDs, timestamps, partner, tier and status; JSON export included.
+- **Loyalty coins (1 coin = 1 USDT, internal points)** — anyone runs a scheme (name + daily coins per
+  member); others join and tap Collect each day (up to 7 days backlog). Lots can be priced in a
+  scheme's coins: the buyer must hold enough, coins move buyer → seller on acknowledge, the lot
+  auto-closes, and every movement lands in the coin history. Record-only lots need no coins.
 - **Inbox** — pairing requests, interest notes and completion confirmations, with per-record
   acknowledge forms (receiver picks the verified amount).
 - **Admin console** — members, all records, force-complete, block/unblock.

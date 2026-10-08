@@ -65,7 +65,13 @@ const cache = {
 };
 
 /* ---------------- local offline fallback (same product rules) ---------------- */
-const LK = { users: "p2p_users_v1", session: "p2p_local_user_v1", txns: "p2p_txns_v1", notifs: "p2p_notifs_v1", offers: "p2p_offers_v1" };
+const LK = { users: "p2p_users_v1", session: "p2p_local_user_v1", txns: "p2p_txns_v1", notifs: "p2p_notifs_v1", offers: "p2p_offers_v1", schemes: "p2p_schemes_v1", members: "p2p_members_v1", coinlogs: "p2p_coinlogs_v1" };
+const DAY_MS = 86400000;
+const MAX_ACCRUE_DAYS = 7;
+function localAccrual(m, dailyCoins, nowMs) {
+  const days = Math.max(0, Math.min(Math.floor((nowMs - new Date(m.lastSettledAt).getTime()) / DAY_MS), MAX_ACCRUE_DAYS));
+  return { days, credit: days * dailyCoins };
+}
 const lread = (k, f) => cache.read(k, f);
 const lwrite = (k, v) => cache.write(k, v);
 const uid = (p = "id") => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -90,6 +96,9 @@ function seedLocal() {
   if (!localStorage.getItem(LK.txns)) lwrite(LK.txns, []);
   if (!localStorage.getItem(LK.notifs)) lwrite(LK.notifs, []);
   if (!localStorage.getItem(LK.offers)) lwrite(LK.offers, []);
+  if (!localStorage.getItem(LK.schemes)) lwrite(LK.schemes, []);
+  if (!localStorage.getItem(LK.members)) lwrite(LK.members, []);
+  if (!localStorage.getItem(LK.coinlogs)) lwrite(LK.coinlogs, []);
   // migrate older seeds: ensure admin exists + role/blocked flags present
   const seeded = lread(LK.users, []);
   let touched = false;
@@ -182,7 +191,7 @@ const local = {
     const plan = planById(target.plan);
     return { username: target.username, plan: target.plan || null, planName: plan ? plan.name : null, wallet: target.wallet };
   },
-  deposit({ planId, targetWallet }) {
+  deposit({ planId, targetWallet, offerId }) {
     const plan = planById(planId);
     if (!plan) throw new Error("Select a valid tier first.");
     const wall = String(targetWallet || "").trim();
@@ -198,11 +207,32 @@ const local = {
     const target = users.find((u) => u.wallet === wall);
     if (!target) throw new Error("No member found with that wallet text. Check for extra spaces or ask your partner to re-send it.");
     if (target.id === sender.id) throw new Error("That's your own wallet text — paste your partner's instead.");
+    let schemeId = null, coinAmount = 0, linkedOfferId = null, schemeName = null;
+    if (offerId) {
+      const offer = lread(LK.offers, []).find((o) => o.id === offerId);
+      if (!offer || offer.status !== "open") throw new Error("That lot is no longer open.");
+      if (offer.userId !== target.id) throw new Error("That wallet doesn't belong to the lot poster — double-check the address.");
+      if (offer.planId !== plan.id) throw new Error("Tier mismatch — pick the tier shown on the lot.");
+      linkedOfferId = offer.id;
+      if (lread(LK.txns, []).some((t) => t.offerId === linkedOfferId && t.senderId === sender.id && t.status === "awaiting_confirmation"))
+        throw new Error("You already have a pending request on this lot — wait for it to complete first.");
+      if (offer.schemeId) {
+        const membership = lread(LK.members, []).find((m) => m.schemeId === offer.schemeId && m.userId === sender.id);
+        if (!membership) throw new Error("Join that coin scheme first — this lot is priced in its coins.");
+        if (membership.balance < offer.coinAmount)
+          throw new Error(`You hold ${membership.balance} ${offer.schemeName} coins but this lot costs ${offer.coinAmount}. Collect your daily coins first.`);
+        schemeId = offer.schemeId;
+        schemeName = offer.schemeName;
+        coinAmount = offer.coinAmount;
+      }
+    }
     const txn = {
       id: uid("txn"), senderId: sender.id, senderUsername: sender.username,
       targetId: target.id, targetUsername: target.username, targetWalletSnapshot: target.wallet,
       planId: plan.id, planName: plan.name, amount: plan.amount,
-      status: "awaiting_confirmation", copyLoggedAt: new Date().toISOString(),
+      status: "awaiting_confirmation",
+      schemeId, schemeName, coinAmount, offerId: linkedOfferId,
+      copyLoggedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(), completedAt: null, verifiedAmount: null,
     };
     const txns = lread(LK.txns, []);
@@ -210,7 +240,9 @@ const local = {
     const notifs = lread(LK.notifs, []);
     lwrite(LK.notifs, [{
       id: uid("notif"), userId: target.id, txnId: txn.id,
-      text: `User ${sender.username} sent you a pairing request for the ${plan.name} tier.`,
+      text: schemeId
+        ? `User ${sender.username} sent you a pairing request for the ${plan.name} tier (${coinAmount} ${schemeName} coins).`
+        : `User ${sender.username} sent you a pairing request for the ${plan.name} tier.`,
       read: false, createdAt: new Date().toISOString(),
     }, ...notifs]);
     return { txn, target: strip(target) };
@@ -241,12 +273,40 @@ const local = {
     if (txn.status === "completed") throw new Error("This entry is already completed.");
     const amt = Number(verifiedAmount);
     if (!amt || amt <= 0) throw new Error("Select the exact amount you verified receiving.");
+    if (txn.schemeId && txn.coinAmount > 0) {
+      const members = lread(LK.members, []);
+      const buyer = members.find((m) => m.schemeId === txn.schemeId && m.userId === txn.senderId);
+      const seller = members.find((m) => m.schemeId === txn.schemeId && m.userId === txn.targetId);
+      if (!buyer || buyer.balance < txn.coinAmount)
+        throw new Error(`The buyer no longer holds the ${txn.coinAmount} ${txn.schemeName} coins — ask them to collect their daily coins first.`);
+      if (!seller) throw new Error("The seller is no longer in that coin scheme.");
+      buyer.balance -= txn.coinAmount;
+      seller.balance += txn.coinAmount;
+      lwrite(LK.members, members);
+      const logs = lread(LK.coinlogs, []);
+      const now2 = new Date().toISOString();
+      lwrite(LK.coinlogs, [
+        { id: uid("log"), userId: txn.senderId, schemeId: txn.schemeId, schemeName: txn.schemeName, kind: "spend", amount: -txn.coinAmount, balanceAfter: buyer.balance, ref: txn.id, at: now2 },
+        { id: uid("log"), userId: txn.targetId, schemeId: txn.schemeId, schemeName: txn.schemeName, kind: "earn", amount: txn.coinAmount, balanceAfter: seller.balance, ref: txn.id, at: now2 },
+        ...logs,
+      ]);
+      if (txn.offerId) {
+        const offers = lread(LK.offers, []);
+        const offer = offers.find((o) => o.id === txn.offerId);
+        if (offer) {
+          Object.assign(offer, { status: "closed", closedAt: now2 });
+          lwrite(LK.offers, offers);
+        }
+      }
+    }
     Object.assign(txn, { status: "completed", verifiedAmount: amt, completedAt: new Date().toISOString() });
     lwrite(LK.txns, txns);
     const notifs = lread(LK.notifs, []);
     lwrite(LK.notifs, [{
       id: uid("notif"), userId: txn.senderId, txnId: txn.id,
-      text: `User ${txn.targetUsername} acknowledged & confirmed your ${txn.planName} entry (${amt}). Status: Completed.`,
+      text: txn.schemeId
+        ? `User ${txn.targetUsername} acknowledged & confirmed your ${txn.planName} entry (${txn.coinAmount} ${txn.schemeName} coins moved). Status: Completed.`
+        : `User ${txn.targetUsername} acknowledged & confirmed your ${txn.planName} entry (${amt}). Status: Completed.`,
       read: false, createdAt: new Date().toISOString(),
     }, ...notifs]);
     return txn;
@@ -272,9 +332,37 @@ const local = {
     const txn = txns.find((t) => t.id === txnId);
     if (!txn) throw new Error("Record not found.");
     if (txn.status === "completed") throw new Error("This record is already completed.");
+    let coinNote = "";
+    if (txn.schemeId && txn.coinAmount > 0) {
+      const members = lread(LK.members, []);
+      const buyer = members.find((m) => m.schemeId === txn.schemeId && m.userId === txn.senderId);
+      const seller = members.find((m) => m.schemeId === txn.schemeId && m.userId === txn.targetId);
+      if (buyer && seller && buyer.balance >= txn.coinAmount) {
+        buyer.balance -= txn.coinAmount;
+        seller.balance += txn.coinAmount;
+        lwrite(LK.members, members);
+        const logs = lread(LK.coinlogs, []);
+        const now2 = new Date().toISOString();
+        lwrite(LK.coinlogs, [
+          { id: uid("log"), userId: txn.senderId, schemeId: txn.schemeId, schemeName: txn.schemeName, kind: "spend", amount: -txn.coinAmount, balanceAfter: buyer.balance, ref: txn.id, at: now2 },
+          { id: uid("log"), userId: txn.targetId, schemeId: txn.schemeId, schemeName: txn.schemeName, kind: "earn", amount: txn.coinAmount, balanceAfter: seller.balance, ref: txn.id, at: now2 },
+          ...logs,
+        ]);
+      } else {
+        coinNote = " Coin settlement is pending — the buyer no longer holds enough coins.";
+      }
+      if (txn.offerId) {
+        const offers = lread(LK.offers, []);
+        const offer = offers.find((o) => o.id === txn.offerId);
+        if (offer) {
+          Object.assign(offer, { status: "closed", closedAt: new Date().toISOString() });
+          lwrite(LK.offers, offers);
+        }
+      }
+    }
     Object.assign(txn, { status: "completed", verifiedAmount: txn.amount, completedAt: new Date().toISOString() });
     lwrite(LK.txns, txns);
-    const note = `An admin marked your ${txn.planName} record (@${txn.senderUsername} ↔ @${txn.targetUsername}) as Completed.`;
+    const note = `An admin marked your ${txn.planName} record (@${txn.senderUsername} ↔ @${txn.targetUsername}) as Completed.${coinNote}`;
     const notifs = lread(LK.notifs, []);
     lwrite(LK.notifs, [
       { id: uid("notif"), userId: txn.senderId, txnId: txn.id, text: note, read: false, createdAt: new Date().toISOString() },
@@ -298,7 +386,7 @@ const local = {
     const s = lread(LK.session, null);
     return lread(LK.offers, []).filter((o) => o.status === "open" || o.userId === s?.userId);
   },
-  offerCreate({ side, planId, note }) {
+  offerCreate({ side, planId, note, schemeId }) {
     seedLocal();
     if (!["sell", "buy"].includes(side)) throw new Error("Choose whether this lot is open to sell or open to buy.");
     const plan = planById(planId);
@@ -306,9 +394,20 @@ const local = {
     const s = lread(LK.session, null);
     const me = lread(LK.users, []).find((x) => x.id === s?.userId);
     if (!me) throw new Error("Not authenticated.");
+    let coinSchemeId = null, schemeName = null, coinAmount = 0;
+    if (schemeId) {
+      const scheme = lread(LK.schemes, []).find((x) => x.id === schemeId && x.status === "active");
+      if (!scheme) throw new Error("That coin scheme is no longer active.");
+      const membership = lread(LK.members, []).find((m) => m.schemeId === scheme.id && m.userId === me.id);
+      if (!membership) throw new Error("Join that coin scheme first — then price lots in its coins.");
+      coinSchemeId = scheme.id;
+      schemeName = scheme.name;
+      coinAmount = plan.amount;
+    }
     const offer = {
       id: uid("offer"), userId: me.id, username: me.username,
       side, planId: plan.id, planName: plan.name, amount: plan.amount,
+      schemeId: coinSchemeId, schemeName, coinAmount,
       note: String(note || "").trim().slice(0, 200), status: "open",
       createdAt: new Date().toISOString(), closedAt: null,
     };
@@ -344,6 +443,109 @@ const local = {
       read: false, createdAt: new Date().toISOString(),
     }, ...notifs]);
     return { ok: true };
+  },
+  schemes() {
+    seedLocal();
+    const s = lread(LK.session, null);
+    const members = lread(LK.members, []);
+    const mine = new Set(members.filter((m) => m.userId === s?.userId).map((m) => m.schemeId));
+    return lread(LK.schemes, [])
+      .filter((x) => x.status === "active")
+      .map((x) => ({
+        id: x.id, name: x.name, dailyCoins: x.dailyCoins,
+        ownerId: x.ownerId, ownerUsername: x.ownerUsername,
+        members: members.filter((m) => m.schemeId === x.id).length,
+        mine: mine.has(x.id), createdAt: x.createdAt,
+      }));
+  },
+  schemeCreate({ name, dailyCoins }) {
+    seedLocal();
+    const cleanName = String(name || "").trim().slice(0, 40);
+    if (cleanName.length < 3) throw new Error("Give your scheme a name (3–40 characters).");
+    const rate = Math.floor(Number(dailyCoins));
+    if (!rate || rate < 1 || rate > 1000) throw new Error("Daily coins must be between 1 and 1000.");
+    const s = lread(LK.session, null);
+    const me = lread(LK.users, []).find((x) => x.id === s?.userId);
+    if (!me) throw new Error("Not authenticated.");
+    const now = new Date().toISOString();
+    const scheme = {
+      id: uid("scheme"), ownerId: me.id, ownerUsername: me.username,
+      name: cleanName, dailyCoins: rate, status: "active", createdAt: now,
+    };
+    lwrite(LK.schemes, [scheme, ...lread(LK.schemes, [])]);
+    lwrite(LK.members, [
+      { id: uid("mem"), schemeId: scheme.id, userId: me.id, balance: 0, lastSettledAt: now, joinedAt: now },
+      ...lread(LK.members, []),
+    ]);
+    return { scheme };
+  },
+  schemeJoin({ schemeId }) {
+    seedLocal();
+    const s = lread(LK.session, null);
+    const me = lread(LK.users, []).find((x) => x.id === s?.userId);
+    if (!me) throw new Error("Not authenticated.");
+    const scheme = lread(LK.schemes, []).find((x) => x.id === schemeId && x.status === "active");
+    if (!scheme) throw new Error("That scheme is no longer active.");
+    const members = lread(LK.members, []);
+    if (members.some((m) => m.schemeId === scheme.id && m.userId === me.id))
+      throw new Error("You're already in this scheme — collect your daily coins.");
+    const now = new Date().toISOString();
+    lwrite(LK.members, [
+      { id: uid("mem"), schemeId: scheme.id, userId: me.id, balance: 0, lastSettledAt: now, joinedAt: now },
+      ...members,
+    ]);
+    return { ok: true };
+  },
+  schemeLeave({ schemeId }) {
+    const s = lread(LK.session, null);
+    const members = lread(LK.members, []);
+    const idx = members.findIndex((m) => m.schemeId === String(schemeId) && m.userId === s?.userId);
+    if (idx < 0) throw new Error("You're not in this scheme.");
+    members.splice(idx, 1);
+    lwrite(LK.members, members);
+    return { ok: true, note: "Unspent coins in this scheme were forfeited." };
+  },
+  myCoins() {
+    seedLocal();
+    const s = lread(LK.session, null);
+    const schemes = Object.fromEntries(lread(LK.schemes, []).map((x) => [x.id, x]));
+    const nowMs = Date.now();
+    return lread(LK.members, [])
+      .filter((m) => m.userId === s?.userId && schemes[m.schemeId] && schemes[m.schemeId].status === "active")
+      .map((m) => {
+        const sc = schemes[m.schemeId];
+        const { days, credit } = localAccrual(m, sc.dailyCoins, nowMs);
+        return {
+          schemeId: m.schemeId, schemeName: sc.name, dailyCoins: sc.dailyCoins,
+          ownerUsername: sc.ownerUsername, balance: m.balance,
+          claimable: credit, claimableDays: days,
+        };
+      })
+      .sort((a, b) => b.balance - a.balance);
+  },
+  collect({ schemeId }) {
+    const s = lread(LK.session, null);
+    const members = lread(LK.members, []);
+    const m = members.find((x) => x.schemeId === String(schemeId) && x.userId === s?.userId);
+    if (!m) throw new Error("Join this scheme first.");
+    const scheme = lread(LK.schemes, []).find((x) => x.id === m.schemeId);
+    if (!scheme || scheme.status !== "active") throw new Error("That scheme is no longer active.");
+    const { days, credit } = localAccrual(m, scheme.dailyCoins, Date.now());
+    if (!credit) return { credited: 0, balance: m.balance, message: "Nothing to collect yet — come back tomorrow." };
+    m.balance += credit;
+    m.lastSettledAt = new Date(new Date(m.lastSettledAt).getTime() + days * DAY_MS).toISOString();
+    lwrite(LK.members, members);
+    const logs = lread(LK.coinlogs, []);
+    lwrite(LK.coinlogs, [
+      { id: uid("log"), userId: m.userId, schemeId: m.schemeId, schemeName: scheme.name, kind: "collect", amount: credit, balanceAfter: m.balance, ref: `${days}d`, at: new Date().toISOString() },
+      ...logs,
+    ]);
+    return { credited: credit, balance: m.balance };
+  },
+  coinHistory() {
+    seedLocal();
+    const s = lread(LK.session, null);
+    return lread(LK.coinlogs, []).filter((l) => l.userId === s?.userId).slice(0, 100);
   },
 };
 function strip(u) {
@@ -417,9 +619,9 @@ export async function apiLookupPartner(wallet) {
   return { partner: local.lookupPartner({ wallet }) };
 }
 
-export async function apiDeposit(planId, targetWallet) {
-  if (await useRemote()) return call("/api/pairing?action=request", { method: "POST", body: { planId, targetWallet } });
-  return local.deposit({ planId, targetWallet });
+export async function apiDeposit(planId, targetWallet, offerId) {
+  if (await useRemote()) return call("/api/pairing?action=request", { method: "POST", body: { planId, targetWallet, offerId } });
+  return local.deposit({ planId, targetWallet, offerId });
 }
 
 export async function apiTxns() {
@@ -490,9 +692,9 @@ export async function apiOffers() {
   return local.offers();
 }
 
-export async function apiOfferCreate({ side, planId, note }) {
-  if (await useRemote()) return call("/api/pairing?action=offer-create", { method: "POST", body: { side, planId, note } });
-  return local.offerCreate({ side, planId, note });
+export async function apiOfferCreate({ side, planId, note, schemeId }) {
+  if (await useRemote()) return call("/api/pairing?action=offer-create", { method: "POST", body: { side, planId, note, schemeId } });
+  return local.offerCreate({ side, planId, note, schemeId });
 }
 
 export async function apiOfferClose(offerId) {
@@ -503,6 +705,58 @@ export async function apiOfferClose(offerId) {
 export async function apiOfferInterest(offerId) {
   if (await useRemote()) return call("/api/pairing?action=offer-interest", { method: "POST", body: { offerId } });
   return local.offerInterest({ offerId });
+}
+
+export async function apiSchemes() {
+  if (await useRemote()) {
+    try {
+      const j = await call("/api/pairing?action=schemes");
+      cache.write("p2p_cache_schemes_v1", j.schemes);
+      return j.schemes;
+    } catch { return cache.read("p2p_cache_schemes_v1", []); }
+  }
+  return local.schemes();
+}
+
+export async function apiSchemeCreate({ name, dailyCoins }) {
+  if (await useRemote()) return call("/api/pairing?action=scheme-create", { method: "POST", body: { name, dailyCoins } });
+  return local.schemeCreate({ name, dailyCoins });
+}
+
+export async function apiSchemeJoin(schemeId) {
+  if (await useRemote()) return call("/api/pairing?action=scheme-join", { method: "POST", body: { schemeId } });
+  return local.schemeJoin({ schemeId });
+}
+
+export async function apiSchemeLeave(schemeId) {
+  if (await useRemote()) return call("/api/pairing?action=scheme-leave", { method: "POST", body: { schemeId } });
+  return local.schemeLeave({ schemeId });
+}
+
+export async function apiMyCoins() {
+  if (await useRemote()) {
+    try {
+      const j = await call("/api/pairing?action=my-coins");
+      cache.write("p2p_cache_coins_v1", j.coins);
+      return j.coins;
+    } catch { return cache.read("p2p_cache_coins_v1", []); }
+  }
+  return local.myCoins();
+}
+
+export async function apiCollect(schemeId) {
+  if (await useRemote()) return call("/api/pairing?action=collect", { method: "POST", body: { schemeId } });
+  return local.collect({ schemeId });
+}
+
+export async function apiCoinHistory() {
+  if (await useRemote()) {
+    try {
+      const j = await call("/api/pairing?action=coin-history");
+      return j.moves;
+    } catch { return []; }
+  }
+  return local.coinHistory();
 }
 
 export function apiLogout() {
