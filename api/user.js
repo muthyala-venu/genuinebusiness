@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     const { wallet, plan } = await readJson(req);
     const patch = {};
     if (wallet !== undefined) {
-      if (String(wallet).trim().length < 10) return send(res, 400, { error: "Wallet text must be at least 10 characters." });
+      if (String(wallet).trim().length < 10 || String(wallet).trim().length > 200) return send(res, 400, { error: "Wallet text must be 10–200 characters." });
       patch.wallet = String(wallet).trim();
     }
     if (plan !== undefined) {
@@ -29,6 +29,6 @@ export default async function handler(req, res) {
     const u = await db.collection("users").findOne({ _id: me._id });
     return send(res, 200, { user: cleanUser(u) });
   } catch (e) {
-    return send(res, 500, { error: e.message || "Update failed" });
+    return send(res, 500, { error: "Update failed" });
   }
 }

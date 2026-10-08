@@ -3,11 +3,28 @@
 Manual P2P bookkeeping ledger. No money moves here — purely visual record-keeping.
 **Username is chosen by the user; password is generated randomly by the system** (shown once at signup, changeable in Account → Change password).
 
-## How pairing works (manual — no auto-matching)
-1. Two members agree on a tier **outside the app** (WhatsApp, in person, …) and share the public wallet text.
-2. The sender pastes that wallet text into Tiers & Pairing → the app resolves it to a member profile (`POST /api/pairing?action=lookup`).
-3. The sender confirms the profile and sends a pairing request (`POST /api/pairing?action=request { planId, targetWallet }`) — one wallet text belongs to exactly one member.
-4. The partner gets an inbox note and acknowledges after verifying offline → status flips to Completed.
+## Features
+- **Market board** — members post lots: *open to sell* (have a lot, want a partner) or *open to buy*
+  (want a lot, seek a partner), per tier with an optional note. Filter by side/tier, express interest
+  (the poster is notified), then pair.
+- **Manual pairing** — paste a partner's wallet text (exchanged off-app) → see their profile →
+  send a pairing request. One wallet text belongs to exactly one member.
+- **Two-sided diary** — every record moves Address shared → Awaiting confirmation → Completed,
+  with record IDs, timestamps, partner, tier and status; JSON export included.
+- **Inbox** — pairing requests, interest notes and completion confirmations, with per-record
+  acknowledge forms (receiver picks the verified amount).
+- **Admin console** — members, all records, force-complete, block/unblock.
+- **PWA, mobile-first** — bottom tab bar, 44px+ touch targets, 16px inputs (no iOS zoom),
+  safe-area support, installable, offline app shell. API responses are never cached.
+
+## The standard flow (money moves off-app, records live here)
+1. **Discover** — browse Market, or agree directly with someone you know.
+2. **Agree off-app** — settle tier and details over WhatsApp / in person. Money moves here, outside the app.
+3. **Exchange addresses off-app** — partners share public wallet *text* (never a connection, never inside the app).
+4. **Record** — paste their wallet text in Find your partner, confirm the profile, send the request.
+5. **Verify off-app** — the receiver checks their own wallet independently.
+6. **Acknowledge** — the receiver confirms the exact amount in their inbox → both ledgers turn Completed.
+7. **Keep the diary** — filter the ledger, export JSON, dispute via admin if needed.
 
 ## Admin dashboard
 - Fixed admin username: `admin` (reserved — members can't register it).

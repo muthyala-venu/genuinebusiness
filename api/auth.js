@@ -16,7 +16,7 @@ export default async function handler(req, res) {
       if (name.length < 3) return send(res, 400, { error: "Username must be at least 3 characters." });
       if (!/^[a-zA-Z0-9_.-]+$/.test(name)) return send(res, 400, { error: "Username may only contain letters, numbers, _, . or -." });
       if (name.toLowerCase() === "admin") return send(res, 400, { error: "That username is reserved. Pick another one." });
-      if (wall.length < 10) return send(res, 400, { error: "Paste your public Trust Wallet address text string (min 10 chars)." });
+      if (wall.length < 10 || wall.length > 200) return send(res, 400, { error: "Paste your public Trust Wallet address text string (10–200 chars)." });
       const db = await getDb();
       if (await db.collection("users").findOne({ usernameLower: name.toLowerCase() }))
         return send(res, 409, { error: "That username is already taken. Pick a unique username." });
@@ -70,6 +70,6 @@ export default async function handler(req, res) {
 
     return send(res, 404, { error: "Unknown auth action." });
   } catch (e) {
-    return send(res, 500, { error: e.message || "Auth failed" });
+    return send(res, 500, { error: "Auth failed" });
   }
 }

@@ -61,6 +61,6 @@ export default async function handler(req, res) {
 
     return send(res, 404, { error: "Unknown admin action." });
   } catch (e) {
-    return send(res, 500, { error: e.message || "Admin op failed" });
+    return send(res, 500, { error: "Admin op failed" });
   }
 }

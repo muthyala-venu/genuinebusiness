@@ -65,7 +65,7 @@ const cache = {
 };
 
 /* ---------------- local offline fallback (same product rules) ---------------- */
-const LK = { users: "p2p_users_v1", session: "p2p_local_user_v1", txns: "p2p_txns_v1", notifs: "p2p_notifs_v1" };
+const LK = { users: "p2p_users_v1", session: "p2p_local_user_v1", txns: "p2p_txns_v1", notifs: "p2p_notifs_v1", offers: "p2p_offers_v1" };
 const lread = (k, f) => cache.read(k, f);
 const lwrite = (k, v) => cache.write(k, v);
 const uid = (p = "id") => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -89,6 +89,7 @@ function seedLocal() {
   }
   if (!localStorage.getItem(LK.txns)) lwrite(LK.txns, []);
   if (!localStorage.getItem(LK.notifs)) lwrite(LK.notifs, []);
+  if (!localStorage.getItem(LK.offers)) lwrite(LK.offers, []);
   // migrate older seeds: ensure admin exists + role/blocked flags present
   const seeded = lread(LK.users, []);
   let touched = false;
@@ -292,6 +293,58 @@ const local = {
     lwrite(LK.users, users);
     return { ok: true };
   },
+  offers() {
+    seedLocal();
+    const s = lread(LK.session, null);
+    return lread(LK.offers, []).filter((o) => o.status === "open" || o.userId === s?.userId);
+  },
+  offerCreate({ side, planId, note }) {
+    seedLocal();
+    if (!["sell", "buy"].includes(side)) throw new Error("Choose whether this lot is open to sell or open to buy.");
+    const plan = planById(planId);
+    if (!plan) throw new Error("Select a valid tier for this lot.");
+    const s = lread(LK.session, null);
+    const me = lread(LK.users, []).find((x) => x.id === s?.userId);
+    if (!me) throw new Error("Not authenticated.");
+    const offer = {
+      id: uid("offer"), userId: me.id, username: me.username,
+      side, planId: plan.id, planName: plan.name, amount: plan.amount,
+      note: String(note || "").trim().slice(0, 200), status: "open",
+      createdAt: new Date().toISOString(), closedAt: null,
+    };
+    lwrite(LK.offers, [offer, ...lread(LK.offers, [])]);
+    return { offer };
+  },
+  offerClose({ offerId }) {
+    const s = lread(LK.session, null);
+    const offers = lread(LK.offers, []);
+    const offer = offers.find((o) => o.id === offerId);
+    if (!offer) throw new Error("Lot not found.");
+    if (offer.userId !== s?.userId) throw new Error("Only the poster can close this lot.");
+    Object.assign(offer, { status: "closed", closedAt: new Date().toISOString() });
+    lwrite(LK.offers, offers);
+    return { ok: true };
+  },
+  offerInterest({ offerId }) {
+    seedLocal();
+    const s = lread(LK.session, null);
+    const me = lread(LK.users, []).find((x) => x.id === s?.userId);
+    if (!me) throw new Error("Not authenticated.");
+    const offers = lread(LK.offers, []);
+    const offer = offers.find((o) => o.id === offerId);
+    if (!offer || offer.status !== "open") throw new Error("That lot is no longer open.");
+    if (offer.userId === me.id) throw new Error("That's your own lot.");
+    if ((offer.interested || []).includes(me.id)) throw new Error("You've already shown interest in this lot — the poster has been notified.");
+    offer.interested = [...(offer.interested || []), me.id];
+    lwrite(LK.offers, offers);
+    const notifs = lread(LK.notifs, []);
+    lwrite(LK.notifs, [{
+      id: uid("notif"), userId: offer.userId, txnId: null,
+      text: `User ${me.username} is interested in your lot (${offer.side === "sell" ? "open to sell" : "open to buy"} · ${offer.planName} $${offer.amount}). Share your wallet text with them outside the app to pair.`,
+      read: false, createdAt: new Date().toISOString(),
+    }, ...notifs]);
+    return { ok: true };
+  },
 };
 function strip(u) {
   if (!u) return null;
@@ -424,6 +477,32 @@ export async function apiAdminComplete(txnId) {
 export async function apiAdminBlock(userId, blocked) {
   if (await useRemote()) return call("/api/admin?action=block", { method: "POST", body: { userId, blocked } });
   return local.adminBlock({ userId, blocked });
+}
+
+export async function apiOffers() {
+  if (await useRemote()) {
+    try {
+      const j = await call("/api/pairing?action=offers");
+      cache.write("p2p_cache_offers_v1", j.offers);
+      return j.offers;
+    } catch { return cache.read("p2p_cache_offers_v1", []); }
+  }
+  return local.offers();
+}
+
+export async function apiOfferCreate({ side, planId, note }) {
+  if (await useRemote()) return call("/api/pairing?action=offer-create", { method: "POST", body: { side, planId, note } });
+  return local.offerCreate({ side, planId, note });
+}
+
+export async function apiOfferClose(offerId) {
+  if (await useRemote()) return call("/api/pairing?action=offer-close", { method: "POST", body: { offerId } });
+  return local.offerClose({ offerId });
+}
+
+export async function apiOfferInterest(offerId) {
+  if (await useRemote()) return call("/api/pairing?action=offer-interest", { method: "POST", body: { offerId } });
+  return local.offerInterest({ offerId });
 }
 
 export function apiLogout() {

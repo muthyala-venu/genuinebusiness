@@ -8,6 +8,7 @@ export default async function handler(req, res) {
   try {
     const me = await getAuthUser(req);
     if (!me) return send(res, 401, { error: "Not authenticated." });
+    if (me.blocked) return send(res, 403, { error: "This account has been blocked. Contact support." });
     const db = await getDb();
 
     if (req.method === "GET") {
@@ -33,6 +34,6 @@ export default async function handler(req, res) {
 
     return send(res, 404, { error: "Unknown notifications action." });
   } catch (e) {
-    return send(res, 500, { error: e.message || "Failed to load notifications" });
+    return send(res, 500, { error: "Failed to load notifications" });
   }
 }

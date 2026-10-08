@@ -7,6 +7,7 @@ export default async function handler(req, res) {
   try {
     const me = await getAuthUser(req);
     if (!me) return send(res, 401, { error: "Not authenticated." });
+    if (me.blocked) return send(res, 403, { error: "This account has been blocked. Contact support." });
     const id = String(me._id);
     const db = await getDb();
     const docs = await db.collection("txns")
@@ -14,6 +15,6 @@ export default async function handler(req, res) {
       .sort({ createdAt: -1 }).limit(200).toArray();
     return send(res, 200, { txns: docs.map((t) => ({ ...t, id: String(t._id), _id: undefined })) });
   } catch (e) {
-    return send(res, 500, { error: e.message || "Failed to load ledger" });
+    return send(res, 500, { error: "Failed to load ledger" });
   }
 }

@@ -5,6 +5,7 @@ import {
   apiDeposit, apiTxns, apiNotifs, apiMarkRead, apiMarkAllRead, apiAck,
   exportLedgerJSON, remoteAvailable, LOCAL_DEMO_CREDS, apiLookupPartner,
   apiAdminUsers, apiAdminTxns, apiAdminComplete, apiAdminBlock,
+  apiOffers, apiOfferCreate, apiOfferClose, apiOfferInterest,
 } from "./lib/api";
 
 const DISCLAIMER = "This dashboard is a manual ledger tracker. No financial transactions take place on this platform.";
@@ -52,9 +53,38 @@ function Field({ label, children, hint }) {
   );
 }
 
-const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20";
-const btnPrimary = "rounded-xl bg-gradient-to-r from-cyan-400 to-violet-500 px-4 py-2.5 text-sm font-bold text-[#06121f] hover:brightness-110 active:scale-[.99] disabled:opacity-50 disabled:pointer-events-none transition";
-const btnGhost = "rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-white/10 transition";
+const inputCls = "w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 text-base text-slate-100 placeholder:text-slate-500 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/20";
+const btnPrimary = "rounded-xl bg-gradient-to-r from-cyan-400 to-violet-500 px-4 py-3 text-sm font-bold text-[#06121f] hover:brightness-110 active:scale-[.99] disabled:opacity-50 disabled:pointer-events-none transition";
+const btnGhost = "rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/10 transition";
+
+function BottomNav({ tab, onGo, unread }) {
+  const items = [
+    { id: "overview", label: "Home", icon: "⌂" },
+    { id: "market", label: "Market", icon: "◇", also: ["plans"] },
+    { id: "ledger", label: "Ledger", icon: "☰" },
+    { id: "alerts", label: "Inbox", icon: "✉", badge: unread },
+    { id: "account", label: "Account", icon: "○", also: ["admin"] },
+  ];
+  const active = (it) => tab === it.id || (it.also || []).includes(tab);
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#080b14]/95 backdrop-blur-lg" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <div className="mx-auto grid max-w-6xl grid-cols-5">
+        {items.map((it) => (
+          <button
+            key={it.id}
+            onClick={() => onGo(it.id)}
+            className={`relative flex min-h-[60px] flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition ${active(it) ? "text-cyan-300" : "text-slate-500 hover:text-slate-300"}`}
+          >
+            {active(it) && <span className="absolute top-0 h-0.5 w-10 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500" />}
+            <span className="text-xl leading-none">{it.icon}</span>
+            {it.label}
+            {it.badge > 0 && <span className="absolute right-1/2 top-1.5 translate-x-6 rounded-full bg-rose-500 px-1.5 text-[10px] font-black text-white">{it.badge}</span>}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
 
 /* ================= Auth ================= */
 function AuthScreen({ onAuthed, toast }) {
@@ -373,17 +403,10 @@ function Dashboard({ me, setMe, toast }) {
     } catch (err) { toast(err.message); }
   }
 
-  const tabs = [
-    { id: "overview", label: "Home" },
-    { id: "plans", label: "Tiers & Pairing" },
-    { id: "ledger", label: "Ledger" },
-    { id: "alerts", label: `Inbox${unread ? ` (${unread})` : ""}` },
-    { id: "account", label: "Account" },
-    ...(me.role === "admin" ? [{ id: "admin", label: "Admin" }] : []),
-  ];
+  const goTab = (id) => { setTab(id); refresh(); };
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 pb-20">
+    <div className="mx-auto w-full max-w-6xl px-4 pb-32">
       <header className="sticky top-0 z-40 -mx-4 border-b border-white/5 bg-[#080b14]/85 px-4 py-3 backdrop-blur-lg">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -393,17 +416,9 @@ function Dashboard({ me, setMe, toast }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {installEvt && <button className={btnGhost} onClick={() => installEvt.prompt()}>⬇ Install app</button>}
+            {installEvt && <button className={btnGhost} onClick={() => installEvt.prompt()}>⬇ Install</button>}
             <button className={btnGhost} onClick={() => { apiLogout(); window.location.reload(); }}>Log out</button>
           </div>
-        </div>
-        <div className="mx-auto mt-3 flex max-w-6xl gap-1.5 overflow-x-auto pb-1">
-          {tabs.map((t) => (
-            <button key={t.id} onClick={() => { setTab(t.id); refresh(); }}
-              className={`whitespace-nowrap rounded-xl px-3.5 py-2 text-xs font-bold transition ${tab === t.id ? "bg-gradient-to-r from-cyan-400 to-violet-500 text-[#06121f]" : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"}`}>
-              {t.label}
-            </button>
-          ))}
         </div>
       </header>
 
@@ -466,6 +481,14 @@ function Dashboard({ me, setMe, toast }) {
         </div>
       )}
 
+      {!loading && tab === "market" && (
+        <MarketPanel
+          me={me}
+          toast={toast}
+          onPair={(planId) => { setPlanPick(planId); goTab("plans"); toast("Tier set — now paste the wallet text they shared with you."); }}
+        />
+      )}
+
       {!loading && tab === "plans" && (
         <div className="rise mt-4 grid gap-4">
           <Card>
@@ -502,7 +525,7 @@ function Dashboard({ me, setMe, toast }) {
               <div className="relative flex-1">
                 <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">⌕</span>
                 <input
-                  className={`${inputCls} mono pl-9 text-xs`}
+                  className={`${inputCls} mono pl-9`}
                   value={partnerWallet}
                   onChange={(e) => { setPartnerWallet(e.target.value); setPartner(null); }}
                   placeholder="Paste Trust Wallet address…  (e.g. T…)"
@@ -616,6 +639,12 @@ function Dashboard({ me, setMe, toast }) {
 
       {!loading && tab === "account" && (
         <div className="rise mt-4 grid gap-4 md:grid-cols-2">
+          {me.role === "admin" && (
+            <button onClick={() => goTab("admin")} className="glass rounded-2xl border-violet-400/30 p-5 text-left shadow-xl shadow-black/30 md:col-span-2">
+              <div className="text-sm font-black text-violet-300">Admin console →</div>
+              <div className="mt-0.5 text-xs text-slate-500">Members, all records, force-complete, blocks.</div>
+            </button>
+          )}
           <Card>
             <h2 className="text-lg font-black">Profile</h2>
             <p className="text-xs text-slate-500">Your public face in the circle.</p>
@@ -663,18 +692,149 @@ function Dashboard({ me, setMe, toast }) {
       )}
 
       {!loading && tab === "admin" && me.role === "admin" && (
-        <AdminPanel toast={toast} />
+        <AdminPanel toast={toast} onBack={() => goTab("account")} />
       )}
 
       {receipt && (
         <RequestModal receipt={receipt} plan={planById(receipt.planId)} onClose={() => setReceipt(null)} toast={toast} />
       )}
+      <BottomNav tab={tab} onGo={goTab} unread={unread} />
+    </div>
+  );
+}
+
+/* ================= Market: lots open to sell / open to buy ================= */
+function MarketPanel({ me, toast, onPair }) {
+  const [offers, setOffers] = useState([]);
+  const [side, setSide] = useState("all");
+  const [tier, setTier] = useState("all");
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ side: "sell", planId: me.plan || "bronze", note: "" });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try { setOffers((await apiOffers()) || []); } catch (e) { toast(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function post() {
+    try {
+      setBusy(true);
+      await apiOfferCreate(form);
+      setShowForm(false);
+      setForm({ side: "sell", planId: me.plan || "bronze", note: "" });
+      toast("Your lot is live on the board.");
+      load();
+    } catch (e) { toast(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function closeLot(id) {
+    try { await apiOfferClose(id); toast("Lot closed."); load(); }
+    catch (e) { toast(e.message); }
+  }
+
+  async function interest(o) {
+    try {
+      await apiOfferInterest(o.id);
+      toast(`@${o.username} has been notified. Agree the details outside the app, then pair here.`);
+    } catch (e) { toast(e.message); }
+  }
+
+  const shown = offers.filter((o) =>
+    (side === "all" || (side === "mine" ? o.userId === me.id : o.side === side)) &&
+    (tier === "all" || o.planId === tier));
+
+  return (
+    <div className="rise mt-4 grid gap-4">
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-black">Open lots</h2>
+            <p className="text-xs text-slate-400">Members offering to pair — open to sell, or looking to buy. Contact them outside the app, then pair here.</p>
+          </div>
+          <button className={btnPrimary} onClick={() => setShowForm((s) => !s)}>{showForm ? "Close form" : "+ Post a lot"}</button>
+        </div>
+        {showForm && (
+          <div className="rise mt-3 rounded-2xl border border-white/10 bg-black/30 p-4">
+            <div className="grid grid-cols-2 gap-2">
+              {[["sell", "Open to sell", "You have a lot and want a partner"], ["buy", "Open to buy", "You want a lot and seek a partner"]].map(([v, l, d]) => (
+                <button key={v} onClick={() => setForm({ ...form, side: v })}
+                  className={`rounded-2xl border p-3 text-left transition ${form.side === v ? "border-cyan-300 bg-cyan-400/10" : "border-white/10 bg-black/30"}`}>
+                  <div className="text-sm font-black">{l}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">{d}</div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3">
+              <Field label="Tier">
+                <select className={inputCls} value={form.planId} onChange={(e) => setForm({ ...form, planId: e.target.value })}>
+                  {PLANS.map((p) => <option key={p.id} value={p.id}>{p.name} — ${p.amount}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div className="mt-3">
+              <Field label="Note (optional)" hint="Anything a partner should know. Max 200 characters.">
+                <textarea className={inputCls} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="e.g. Available evenings, first pairing preferred…" rows={2} maxLength={200} />
+              </Field>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button className={`${btnPrimary} flex-1`} onClick={post} disabled={busy}>{busy ? "Posting…" : "Post lot"}</button>
+              <button className={btnGhost} onClick={() => setShowForm(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {[["all", "All"], ["sell", "Open to sell"], ["buy", "Open to buy"], ["mine", "My lots"]].map(([v, l]) => (
+            <button key={v} onClick={() => setSide(v)}
+              className={`rounded-xl px-3 py-2 text-xs font-bold transition ${side === v ? "bg-gradient-to-r from-cyan-400 to-violet-500 text-[#06121f]" : "border border-white/10 bg-white/5 text-slate-300"}`}>
+              {l}
+            </button>
+          ))}
+          <select className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-300" value={tier} onChange={(e) => setTier(e.target.value)}>
+            <option value="all">All tiers</option>
+            {PLANS.map((p) => <option key={p.id} value={p.id}>{p.name} ${p.amount}</option>)}
+          </select>
+        </div>
+      </Card>
+      {shown.length === 0 && (
+        <Card><div className="py-4 text-center text-xs leading-relaxed text-slate-500">No lots here right now.<br />Post the first one — it takes seconds.</div></Card>
+      )}
+      {shown.map((o) => {
+        const mine = o.userId === me.id;
+        return (
+          <Card key={o.id} className={o.status !== "open" ? "opacity-60" : ""}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${o.side === "sell" ? "bg-violet-500/15 text-violet-300" : "bg-cyan-500/15 text-cyan-300"}`}>
+                {o.side === "sell" ? "OPEN TO SELL" : "OPEN TO BUY"}
+              </span>
+              <b className="text-sm">{o.planName} · ${o.amount}</b>
+              {o.status !== "open" && <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-bold text-slate-500">CLOSED</span>}
+            </div>
+            <div className="mono mt-1.5 text-[11px] text-slate-500">@{o.username} · {o.createdAt ? new Date(o.createdAt).toLocaleString() : ""}</div>
+            {o.note && <p className="mt-2 text-sm leading-relaxed text-slate-300">{o.note}</p>}
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              {mine ? (
+                o.status === "open" && <button className={btnGhost} onClick={() => closeLot(o.id)}>Close this lot</button>
+              ) : (
+                <>
+                  <button className={`${btnPrimary} flex-1`} onClick={() => interest(o)}>I'm interested</button>
+                  <button className={`${btnGhost} flex-1`} onClick={() => onPair(o.planId)}>Pair on this tier →</button>
+                </>
+              )}
+            </div>
+            {!mine && o.status === "open" && (
+              <p className="mt-2 text-[11px] text-slate-600">Tapping “I'm interested” notifies @{o.username}. Exchange wallet addresses outside the app, then paste theirs in Find your partner.</p>
+            )}
+          </Card>
+        );
+      })}
     </div>
   );
 }
 
 /* ================= Admin ================= */
-function AdminPanel({ toast }) {
+function AdminPanel({ toast, onBack }) {
   const [users, setUsers] = useState([]);
   const [txns, setTxns] = useState([]);
   const [q, setQ] = useState("");
@@ -721,6 +881,7 @@ function AdminPanel({ toast }) {
 
   return (
     <div className="rise mt-4 grid gap-4">
+      <button onClick={onBack} className="w-fit text-xs font-bold text-cyan-300">← Back to account</button>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[["Members", users.length], ["Records", txns.length], ["Pending", pending], ["Completed", txns.length - pending]].map(([l, v]) => (
           <Card key={l} className="p-4 text-center">
@@ -734,7 +895,7 @@ function AdminPanel({ toast }) {
           <h2 className="text-lg font-black">Members</h2>
           <div className="relative">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">⌕</span>
-            <input className={`${inputCls} mono pl-9 text-xs sm:w-64`} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search username or wallet…" />
+            <input className={`${inputCls} mono pl-9 sm:w-64`} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search username or wallet…" />
           </div>
         </div>
         <div className="mt-3 overflow-x-auto">
@@ -843,7 +1004,10 @@ function LedgerTable({ txns, me, title, compact }) {
               const partner = isSender ? `@${t.targetUsername}` : `@${t.senderUsername}`;
               return (
                 <tr key={t.id} className="border-t border-white/5">
-                  <td className="py-2.5 pr-3 text-xs text-slate-400">{t.createdAt ? new Date(t.createdAt).toLocaleString() : "—"}</td>
+                  <td className="py-2.5 pr-3 text-xs text-slate-400">
+                    {t.createdAt ? new Date(t.createdAt).toLocaleString() : "—"}
+                    <div className="mono mt-0.5 text-[10px] text-slate-600">#{String(t.id).slice(-6)}</div>
+                  </td>
                   <td className="py-2.5 pr-3">
                     <span className="font-bold text-slate-100">{partner}</span>
                     <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${isSender ? "bg-violet-500/15 text-violet-300" : "bg-cyan-500/15 text-cyan-300"}`}>
@@ -904,7 +1068,7 @@ export default function App() {
         <div className="text-xs font-bold text-slate-400">Genuine Business · {BRAND_TAGLINE}</div>
         <div className="mt-1 text-[11px] text-slate-600">{DISCLAIMER}</div>
       </footer>
-      <div className="fixed bottom-4 left-1/2 z-[60] flex w-full max-w-md -translate-x-1/2 flex-col gap-2 px-4">
+      <div className="fixed bottom-24 left-1/2 z-[60] flex w-full max-w-md -translate-x-1/2 flex-col gap-2 px-4">
         {toasts.map((t) => (
           <div key={t.id} className="glass rise rounded-2xl border-cyan-400/30 px-4 py-3 text-xs font-semibold text-cyan-100 shadow-2xl">{t.msg}</div>
         ))}

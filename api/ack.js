@@ -31,6 +31,6 @@ export default async function handler(req, res) {
     });
     return send(res, 200, { ok: true });
   } catch (e) {
-    return send(res, 500, { error: e.message || "Acknowledge failed" });
+    return send(res, 500, { error: "Acknowledge failed" });
   }
 }

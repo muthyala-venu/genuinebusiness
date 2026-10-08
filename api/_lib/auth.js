@@ -34,7 +34,7 @@ export async function getAuthUser(req) {
   if (!token) return null;
   try {
     const secret = process.env.JWT_SECRET;
-    const payload = jwt.verify(token, secret);
+    const payload = jwt.verify(token, secret, { algorithms: ["HS256"] });
     const db = await getDb();
     const u = await db.collection("users").findOne({ _id: new ObjectId(payload.sub) });
     return u;
