@@ -6,8 +6,8 @@ import {
   exportLedgerJSON, remoteAvailable, LOCAL_DEMO_CREDS, apiLookupPartner,
   apiAdminUsers, apiAdminTxns, apiAdminComplete, apiAdminBlock,
   apiOffers, apiOfferCreate, apiOfferClose, apiOfferInterest,
-  apiSchemes, apiSchemeCreate, apiSchemeJoin, apiSchemeLeave,
-  apiMyCoins, apiCollect, apiCoinHistory,
+  apiSchemes, apiSchemeCreate, apiSchemeLeave,
+  apiMyCoins, apiCoinHistory, apiProposals, apiPropose, apiDecide, apiDistribute, apiRedeemRequest,
 } from "./lib/api";
 
 const DISCLAIMER = "This dashboard is a manual ledger tracker. No financial transactions take place on this platform.";
@@ -198,7 +198,7 @@ function AuthScreen({ onAuthed, toast }) {
           </div>
 
           <div className="mt-4 rounded-2xl border border-amber-400/25 bg-amber-400/10 p-3.5 text-xs leading-relaxed text-amber-200">
-            {DISCLAIMER} No crypto connections, no wallets, no smart contracts — pen-and-paper honesty, digitised.
+            {DISCLAIMER} No wallets are ever connected.
           </div>
         </div>
 
@@ -328,6 +328,7 @@ function Dashboard({ me, setMe, toast }) {
   const [ackAmounts, setAckAmounts] = useState({});
   const [txns, setTxns] = useState([]);
   const [notifs, setNotifs] = useState([]);
+  const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [installEvt, setInstallEvt] = useState(null);
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
@@ -340,10 +341,11 @@ function Dashboard({ me, setMe, toast }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [u, t, n] = await Promise.all([apiMe(), apiTxns(), apiNotifs()]);
+      const [u, t, n, p] = await Promise.all([apiMe(), apiTxns(), apiNotifs(), apiProposals()]);
       if (u) setMe(u);
       setTxns(t || []);
       setNotifs(n || []);
+      setProposals(p || []);
     } catch (e) { toast(e.message); }
     finally { setLoading(false); }
   }, []);
@@ -355,6 +357,11 @@ function Dashboard({ me, setMe, toast }) {
   }, [refresh]);
 
   const unread = useMemo(() => notifs.filter((n) => !n.read).length, [notifs]);
+  const myPendingProposals = useMemo(
+    () => proposals.filter((p) => p.ownerId === me.id && p.status === "pending"), [proposals, me.id]);
+  const awaitingMe = useMemo(
+    () => txns.filter((t) => t.targetId === me.id && t.status !== "completed"), [txns, me.id]);
+  const attention = unread + myPendingProposals.length + awaitingMe.length;
   const activePlan = planById(me.plan);
   const sent = txns.filter((t) => t.senderId === me.id);
   const pending = txns.filter((t) => t.status !== "completed");
@@ -398,6 +405,14 @@ function Dashboard({ me, setMe, toast }) {
     } catch (e) { toast(e.message); }
   }
 
+  async function decideProposal(id, approve) {
+    try {
+      await apiDecide(id, approve);
+      toast(approve ? "Approved — recorded." : "Declined — no record written.");
+      refresh();
+    } catch (e) { toast(e.message); }
+  }
+
   async function doChangePassword(e) {
     e.preventDefault();
     try {
@@ -412,17 +427,15 @@ function Dashboard({ me, setMe, toast }) {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-32">
-      <header className="sticky top-0 z-40 -mx-4 border-b border-white/5 bg-[#080b14]/85 px-4 py-3 backdrop-blur-lg">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div>
-              <div className="text-sm font-black leading-none">Genuine Business</div>
-              <div className="mono text-[10px] text-slate-500">@{me.username} · {BRAND_TAGLINE}</div>
-            </div>
+      <header className="sticky top-0 z-40 -mx-4 border-b border-white/5 bg-[#080b14]/85 px-4 pb-3 backdrop-blur-lg" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-black leading-none">Genuine Business</div>
+            <div className="mono truncate text-[10px] text-slate-500">@{me.username} · {BRAND_TAGLINE}</div>
           </div>
-          <div className="flex items-center gap-2">
-            {installEvt && <button className={btnGhost} onClick={() => installEvt.prompt()}>⬇ Install</button>}
-            <button className={btnGhost} onClick={() => { apiLogout(); window.location.reload(); }}>Log out</button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {installEvt && <button className={`${btnGhost} px-3 py-2 text-xs sm:px-4 sm:py-3 sm:text-sm`} onClick={() => installEvt.prompt()}>⬇ Install</button>}
+            <button className={`${btnGhost} px-3 py-2 text-xs sm:px-4 sm:py-3 sm:text-sm`} onClick={() => { apiLogout(); window.location.reload(); }}>Log out</button>
           </div>
         </div>
       </header>
@@ -436,7 +449,16 @@ function Dashboard({ me, setMe, toast }) {
       {!loading && tab === "overview" && (
         <div className="rise mt-4">
           <h2 className="text-xl font-black">Good to see you, @{me.username}</h2>
-          <p className="text-xs text-slate-500">Here's your circle activity at a glance — anything amber still needs its other half.</p>
+          <p className="text-xs text-slate-500">Your circle at a glance — amber entries still need their other half.</p>
+          {attention > 0 && (
+            <button onClick={() => goTab("alerts")} className="rise mt-3 flex w-full items-center justify-between gap-2 rounded-2xl border border-rose-400/40 bg-rose-500/15 px-4 py-3 text-left">
+              <span className="text-sm font-black text-rose-200">
+                <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-rose-400" />
+                {attention} need{attention === 1 ? "s" : ""} your action
+              </span>
+              <span className="text-xs font-bold text-rose-300">Review →</span>
+            </button>
+          )}
           <div className="mt-3 grid gap-4 md:grid-cols-3">
             <Card>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Your tier</div>
@@ -477,7 +499,7 @@ function Dashboard({ me, setMe, toast }) {
                 {notifs.slice(0, 4).map((n) => (
                   <div key={n.id} className={`rounded-xl border p-2.5 text-xs ${n.read ? "border-white/5 bg-white/[.02] text-slate-400" : "border-cyan-400/25 bg-cyan-400/10 text-cyan-100"}`}>{n.text}</div>
                 ))}
-                {notifs.length === 0 && <div className="text-xs leading-relaxed text-slate-500">All quiet. When someone pairs with you, their note lands here — that's your cue to verify offline and acknowledge.</div>}
+                {notifs.length === 0 && <div className="text-xs leading-relaxed text-slate-500">Nothing yet. When someone pairs with you, verify offline and acknowledge here.</div>}
               </div>
               <button className={`${btnGhost} mt-3 w-full`} onClick={() => setTab("alerts")}>Open inbox</button>
             </Card>
@@ -606,15 +628,43 @@ function Dashboard({ me, setMe, toast }) {
             </div>
             <button className={btnGhost} onClick={async () => { await apiMarkAllRead(); refresh(); }}>Mark all read</button>
           </Card>
+          {myPendingProposals.length > 0 && (
+            <Card className="border-rose-400/40">
+              <h2 className="text-lg font-black">
+                <span className="mr-2 rounded-full bg-rose-500 px-2 py-0.5 text-[11px] font-black text-white">NEW</span>
+                Requests waiting on your approval ({myPendingProposals.length})
+              </h2>
+              <p className="text-xs text-slate-400">Confirm off-app payment first — approving writes the diary record.</p>
+              <div className="mt-3 space-y-2">
+                {myPendingProposals.map((p) => (
+                  <div key={p.id} className="rounded-xl border border-rose-400/25 bg-rose-500/10 p-3">
+                    <div className="text-sm">
+                      <b>@{p.buyerUsername}</b> wants {p.kind === "scheme"
+                        ? <>in — <b>{p.tierName} scheme “{p.schemeName}” (${p.amount})</b></>
+                        : <><b>{p.qty} {p.schemeName} coins</b></>}
+                    </div>
+                    <div className="mono mt-0.5 text-[11px] text-slate-500">{p.createdAt ? new Date(p.createdAt).toLocaleString() : ""}</div>
+                    <div className="mt-2.5 flex gap-2">
+                      <button className={`${btnPrimary} flex-1`} onClick={() => decideProposal(p.id, true)}>Approve — payment received</button>
+                      <button className={`${btnGhost} flex-1`} onClick={() => decideProposal(p.id, false)}>Decline</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
           {notifs.length === 0 && <Card><div className="text-sm text-slate-400">Nothing yet. When someone sends you a pairing request, you'll see it here with a confirm box.</div></Card>}
           {notifs.map((n) => {
             const txn = txns.find((t) => t.id === n.txnId);
             const isReceiver = txn && txn.targetId === me.id;
             return (
-              <Card key={n.id} className={n.read ? "opacity-75" : "border-cyan-400/30"}>
+              <Card key={n.id} className={n.read ? "opacity-75" : "border-cyan-300/60 shadow-lg shadow-cyan-500/10"}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="text-sm">{n.text}</div>
-                  {!n.read && <button className="text-xs text-cyan-300 underline" onClick={async () => { await apiMarkRead(n.id); refresh(); }}>mark read</button>}
+                  <div className="text-sm">
+                    {!n.read && <span className="mr-2 rounded-full bg-cyan-400 px-2 py-0.5 text-[10px] font-black text-[#06121f]">NEW</span>}
+                    {n.text}
+                  </div>
+                  {!n.read && <button className="shrink-0 px-2 py-1.5 text-xs font-bold text-cyan-300" onClick={async () => { await apiMarkRead(n.id); refresh(); }}>mark read</button>}
                 </div>
                 <div className="mono mt-1 text-[11px] text-slate-500">{n.createdAt ? new Date(n.createdAt).toLocaleString() : ""} · {n.read ? "read" : "unread"}</div>
                 {txn && (
@@ -642,7 +692,7 @@ function Dashboard({ me, setMe, toast }) {
                         </div>
                       </div>
                     ) : isReceiver ? (
-                      <div className="mt-2 text-xs text-emerald-300">✓ Confirmed by you — nicely done.</div>
+                      <div className="mt-2 text-xs text-emerald-300">✓ Confirmed by you.</div>
                     ) : (
                       <div className="mt-2 text-xs text-slate-500">On @{txn.targetUsername} now — they'll confirm once they've verified offline.</div>
                     )}
@@ -728,7 +778,7 @@ function MarketPanel({ me, toast, onPair }) {
   const [side, setSide] = useState("all");
   const [tier, setTier] = useState("all");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ side: "sell", planId: me.plan || "bronze", note: "", schemeId: "" });
+  const [form, setForm] = useState({ lotType: "pair", side: "sell", planId: me.plan || "bronze", note: "", schemeId: "", qty: "", targetUser: "" });
   const [mySchemes, setMySchemes] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -744,10 +794,18 @@ function MarketPanel({ me, toast, onPair }) {
   async function post() {
     try {
       setBusy(true);
-      await apiOfferCreate({ ...form, schemeId: form.schemeId || null });
+      if (form.lotType === "request") {
+        const r = await apiRedeemRequest({ schemeId: form.schemeId || null, qty: form.qty, targetUsername: form.targetUser });
+        toast(r.message || "Buyout request sent.");
+      } else if (form.lotType === "sell") {
+        await apiOfferCreate({ kind: "coins", side: "sell", schemeId: form.schemeId || null, qty: form.qty, note: form.note });
+        toast("Your redeem lot is live on the board.");
+      } else {
+        await apiOfferCreate({ kind: "pair", side: form.side, planId: form.planId, note: form.note, schemeId: form.schemeId || null });
+        toast("Your lot is live on the board.");
+      }
       setShowForm(false);
-      setForm({ side: "sell", planId: me.plan || "bronze", note: "", schemeId: "" });
-      toast("Your lot is live on the board.");
+      setForm({ lotType: "pair", side: "sell", planId: me.plan || "bronze", note: "", schemeId: "", qty: "", targetUser: "" });
       load();
     } catch (e) { toast(e.message); }
     finally { setBusy(false); }
@@ -762,6 +820,14 @@ function MarketPanel({ me, toast, onPair }) {
     try {
       await apiOfferInterest(o.id);
       toast(`@${o.username} has been notified. Agree the details outside the app, then pair here.`);
+    } catch (e) { toast(e.message); }
+  }
+
+  async function tradeCoins(o) {
+    try {
+      await apiPropose({ kind: "coins", offerId: o.id });
+      toast(`Request sent — pay $${o.coinAmount} to @${o.username} outside the app. They approve here, then the coins move.`);
+      load();
     } catch (e) { toast(e.message); }
   }
 
@@ -787,13 +853,47 @@ function MarketPanel({ me, toast, onPair }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-lg font-black">Open lots</h2>
-            <p className="text-xs text-slate-400">Members offering to pair — open to sell, or looking to buy. Contact them outside the app, then pair here.</p>
+            <p className="text-xs text-slate-400">Pairing lots and coin lots. Contact members outside the app, then record it here.</p>
           </div>
           <button className={btnPrimary} onClick={() => setShowForm((s) => !s)}>{showForm ? "Close form" : "+ Post a lot"}</button>
         </div>
         {showForm && (
           <div className="rise mt-3 rounded-2xl border border-white/10 bg-black/30 p-4">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
+              {[["pair", "Pairing lot", "Find a partner on a tier"], ["sell", "Sell openly", "Redeem coins to anyone"], ["request", "Request buyout", "Ask one user to buy"]].map(([v, l, d]) => (
+                <button key={v} onClick={() => setForm({ ...form, lotType: v })}
+                  className={`rounded-2xl border p-3 text-left transition ${form.lotType === v ? "border-cyan-300 bg-cyan-400/10" : "border-white/10 bg-black/30"}`}>
+                  <div className="text-sm font-black">{l}</div>
+                  <div className="mt-0.5 hidden text-[11px] text-slate-500 sm:block">{d}</div>
+                </button>
+              ))}
+            </div>
+            {form.lotType !== "pair" && (
+              <div className="mt-3">
+                <Field label="Coin scheme" hint="Coins you hold there.">
+                  <select className={inputCls} value={form.schemeId} onChange={(e) => setForm({ ...form, schemeId: e.target.value })}>
+                    <option value="">Choose scheme…</option>
+                    {mySchemes.map((c) => <option key={c.schemeId} value={c.schemeId}>◉ {c.schemeName} (you hold {c.balance})</option>)}
+                  </select>
+                </Field>
+              </div>
+            )}
+            {form.lotType !== "pair" && (
+              <div className="mt-3">
+                <Field label="Coins to redeem" hint="1 coin = 1 USDT. Settled outside the app.">
+                  <input className={inputCls} type="number" min="1" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} placeholder="e.g. 150" />
+                </Field>
+              </div>
+            )}
+            {form.lotType === "request" && (
+              <div className="mt-3">
+                <Field label="Ask this user to buy" hint="They must hold membership in the scheme. They approve after you settle outside the app.">
+                  <input className={inputCls} value={form.targetUser} onChange={(e) => setForm({ ...form, targetUser: e.target.value })} placeholder="e.g. venu" autoComplete="off" />
+                </Field>
+              </div>
+            )}
+            {form.lotType === "pair" && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {[["sell", "Open to sell", "You have a lot and want a partner"], ["buy", "Open to buy", "You want a lot and seek a partner"]].map(([v, l, d]) => (
                 <button key={v} onClick={() => setForm({ ...form, side: v })}
                   className={`rounded-2xl border p-3 text-left transition ${form.side === v ? "border-cyan-300 bg-cyan-400/10" : "border-white/10 bg-black/30"}`}>
@@ -802,6 +902,8 @@ function MarketPanel({ me, toast, onPair }) {
                 </button>
               ))}
             </div>
+            )}
+            {form.lotType === "pair" && (
             <div className="mt-3">
               <Field label="Tier">
                 <select className={inputCls} value={form.planId} onChange={(e) => setForm({ ...form, planId: e.target.value })}>
@@ -809,6 +911,8 @@ function MarketPanel({ me, toast, onPair }) {
                 </select>
               </Field>
             </div>
+            )}
+            {form.lotType === "pair" && (
             <div className="mt-3">
               <Field label="Payment" hint="Coin-priced lots settle in scheme coins on acknowledge. Record-only lots just write the diary entry.">
                 <select className={inputCls} value={form.schemeId} onChange={(e) => setForm({ ...form, schemeId: e.target.value })}>
@@ -817,16 +921,17 @@ function MarketPanel({ me, toast, onPair }) {
                 </select>
               </Field>
               {mySchemes.length === 0 && (
-                <p className="mt-1 text-[11px] text-slate-600">Join a coin scheme below to price lots in coins.</p>
+                <p className="mt-1 text-[11px] text-slate-600">Buy into a coin scheme below to price lots in coins.</p>
               )}
             </div>
+            )}
             <div className="mt-3">
               <Field label="Note (optional)" hint="Anything a partner should know. Max 200 characters.">
                 <textarea className={inputCls} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="e.g. Available evenings, first pairing preferred…" rows={2} maxLength={200} />
               </Field>
             </div>
             <div className="mt-3 flex gap-2">
-              <button className={`${btnPrimary} flex-1`} onClick={post} disabled={busy}>{busy ? "Posting…" : "Post lot"}</button>
+              <button className={`${btnPrimary} flex-1`} onClick={post} disabled={busy}>{busy ? "Sending…" : form.lotType === "request" ? "Send buyout request" : "Post lot"}</button>
               <button className={btnGhost} onClick={() => setShowForm(false)}>Cancel</button>
             </div>
           </div>
@@ -834,7 +939,7 @@ function MarketPanel({ me, toast, onPair }) {
         <div className="mt-3 flex flex-wrap gap-1.5">
           {[["all", "All"], ["sell", "Open to sell"], ["buy", "Open to buy"], ["mine", "My lots"]].map(([v, l]) => (
             <button key={v} onClick={() => setSide(v)}
-              className={`rounded-xl px-3 py-2 text-xs font-bold transition ${side === v ? "bg-gradient-to-r from-cyan-400 to-violet-500 text-[#06121f]" : "border border-white/10 bg-white/5 text-slate-300"}`}>
+              className={`rounded-xl px-3 py-2.5 text-xs font-bold transition ${side === v ? "bg-gradient-to-r from-cyan-400 to-violet-500 text-[#06121f]" : "border border-white/10 bg-white/5 text-slate-300"}`}>
               {l}
             </button>
           ))}
@@ -849,14 +954,15 @@ function MarketPanel({ me, toast, onPair }) {
       )}
       {shown.map((o) => {
         const mine = o.userId === me.id;
+        const isCoin = o.kind === "coins";
         return (
           <Card key={o.id} className={o.status !== "open" ? "opacity-60" : ""}>
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${o.side === "sell" ? "bg-violet-500/15 text-violet-300" : "bg-cyan-500/15 text-cyan-300"}`}>
-                {o.side === "sell" ? "OPEN TO SELL" : "OPEN TO BUY"}
+                {isCoin ? "REDEEM COINS" : (o.side === "sell" ? "OPEN TO SELL" : "OPEN TO BUY")}
               </span>
-              <b className="text-sm">{o.planName} · ${o.amount}</b>
-              {o.schemeId && <span className="rounded-full bg-amber-400/10 px-2.5 py-1 text-[11px] font-black text-amber-300">◉ {o.coinAmount} {o.schemeName} coins</span>}
+              <b className="text-sm">{isCoin ? `◉ ${o.coinAmount} ${o.schemeName}` : `${o.planName} · $${o.amount}`}</b>
+              {o.schemeId && !isCoin && <span className="rounded-full bg-amber-400/10 px-2.5 py-1 text-[11px] font-black text-amber-300">◉ {o.coinAmount} {o.schemeName} coins</span>}
               {o.status !== "open" && <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-bold text-slate-500">CLOSED</span>}
             </div>
             <div className="mono mt-1.5 text-[11px] text-slate-500">@{o.username} · {o.createdAt ? new Date(o.createdAt).toLocaleString() : ""}</div>
@@ -864,6 +970,12 @@ function MarketPanel({ me, toast, onPair }) {
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               {mine ? (
                 o.status === "open" && <button className={btnGhost} onClick={() => closeLot(o.id)}>Close this lot</button>
+              ) : isCoin ? (
+                o.status === "open" && (
+                  <button className={`${btnPrimary} flex-1`} onClick={() => tradeCoins(o)}>
+                    {o.side === "sell" ? `Buy ${o.coinAmount} coins` : `Sell ${o.coinAmount} coins`}
+                  </button>
+                )
               ) : (
                 <>
                   <button className={`${btnPrimary} flex-1`} onClick={() => interest(o)}>I'm interested</button>
@@ -871,8 +983,11 @@ function MarketPanel({ me, toast, onPair }) {
                 </>
               )}
             </div>
-            {!mine && o.status === "open" && (
+            {!mine && o.status === "open" && !isCoin && (
               <p className="mt-2 text-[11px] text-slate-600">Tapping “I'm interested” notifies @{o.username}. Exchange wallet addresses outside the app, then paste theirs in Find your partner.</p>
+            )}
+            {!mine && o.status === "open" && isCoin && (
+              <p className="mt-2 text-[11px] text-slate-600">Settle ${o.coinAmount} outside the app first — the poster approves here, then the coins move and the trade is recorded.</p>
             )}
           </Card>
         );
@@ -883,42 +998,49 @@ function MarketPanel({ me, toast, onPair }) {
   );
 }
 
-/* ================= Coin schemes: daily loyalty coins (1 coin = 1 USDT) ================= */
+/* ================= Coin schemes: tiers run by members (1 coin = 1 USDT) ================= */
 function SchemesView({ me, toast, onChanged }) {
   const [schemes, setSchemes] = useState([]);
   const [coins, setCoins] = useState([]);
+  const [proposals, setProposals] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
+  const [tierId, setTierId] = useState("bronze");
   const [daily, setDaily] = useState("10");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [s, c] = await Promise.all([apiSchemes(), apiMyCoins()]);
+      const [s, c, p] = await Promise.all([apiSchemes(), apiMyCoins(), apiProposals()]);
       setSchemes(s || []);
       setCoins(c || []);
+      setProposals(p || []);
     } catch (e) { toast(e.message); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
   const total = coins.reduce((a, c) => a + c.balance, 0);
+  const myRequests = proposals.filter((p) => p.ownerId === me.id && p.status === "pending");
 
   async function create() {
     try {
       setBusy(true);
-      await apiSchemeCreate({ name, dailyCoins: daily });
+      await apiSchemeCreate({ name, tierId, dailyCoins: daily });
       setName("");
       setShowForm(false);
-      toast(`“${name.trim()}” is live — members can join and collect daily.`);
+      toast(`“${name.trim()}” is live — buyers pay you off-app, then you approve them here.`);
       load();
       onChanged?.();
     } catch (e) { toast(e.message); }
     finally { setBusy(false); }
   }
 
-  async function join(id, n) {
-    try { await apiSchemeJoin(id); toast(`Joined “${n}” — collect your first coins tomorrow.`); load(); onChanged?.(); }
-    catch (e) { toast(e.message); }
+  async function buy(s) {
+    try {
+      const r = await apiPropose({ kind: "scheme", schemeId: s.id });
+      toast(r.message || `Request sent to @${s.ownerUsername}.`);
+      load();
+    } catch (e) { toast(e.message); }
   }
 
   async function leave(id, n) {
@@ -930,10 +1052,10 @@ function SchemesView({ me, toast, onChanged }) {
     } catch (e) { toast(e.message); }
   }
 
-  async function collect(id) {
+  async function decide(id, approve) {
     try {
-      const r = await apiCollect(id);
-      toast(r.credited > 0 ? `+${r.credited} coins collected.` : (r.message || "Nothing to collect yet."));
+      await apiDecide(id, approve);
+      toast(approve ? "Approved — recorded." : "Declined — no record written.");
       load();
       onChanged?.();
     } catch (e) { toast(e.message); }
@@ -949,15 +1071,20 @@ function SchemesView({ me, toast, onChanged }) {
           </div>
           <button className={btnPrimary} onClick={() => setShowForm((s) => !s)}>{showForm ? "Close" : "+ Run a scheme"}</button>
         </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{COIN_NOTE}</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{COIN_NOTE} Coins arrive through the daily distribution — there is nothing to tap each day.</p>
         {showForm && (
           <div className="rise mt-3 rounded-2xl border border-white/10 bg-black/30 p-4">
-            <p className="text-xs text-slate-400">Anyone can run a scheme: name it, set how many coins each member collects per day, and others join to earn.</p>
+            <p className="text-xs text-slate-400">Run a scheme on any tier: buyers pay you the tier price outside the app, you approve them here, and they earn daily coins.</p>
             <div className="mt-3 space-y-3">
               <Field label="Scheme name">
-                <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Venu's Daily Drop" maxLength={40} />
+                <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Venu's Bronze Circle" maxLength={40} />
               </Field>
-              <Field label="Coins per member per day" hint="1–1000. Members collect up to 7 days of backlog.">
+              <Field label="Tier — sets the entry price buyers pay you" hint="Starter $50 · Bronze $150 · Silver $350 · Gold $750 · Platinum $1500.">
+                <select className={inputCls} value={tierId} onChange={(e) => setTierId(e.target.value)}>
+                  {PLANS.map((p) => <option key={p.id} value={p.id}>{p.name} — entry ${p.amount}</option>)}
+                </select>
+              </Field>
+              <Field label="Coins per member per day" hint="1–1000. Sent by the daily distribution.">
                 <input className={inputCls} type="number" min="1" max="1000" value={daily} onChange={(e) => setDaily(e.target.value)} />
               </Field>
               <button className={`${btnPrimary} w-full`} onClick={create} disabled={busy}>{busy ? "Starting…" : "Start scheme"}</button>
@@ -965,6 +1092,29 @@ function SchemesView({ me, toast, onChanged }) {
           </div>
         )}
       </Card>
+
+      {myRequests.length > 0 && (
+        <Card className="border-cyan-400/30">
+          <h2 className="text-lg font-black">Buy requests waiting on you ({myRequests.length})</h2>
+          <p className="text-xs text-slate-500">Confirm you received their off-app payment, then approve. Approval writes the diary record.</p>
+          <div className="mt-3 space-y-2">
+            {myRequests.map((p) => (
+              <div key={p.id} className="rounded-xl bg-black/30 p-3">
+                <div className="text-sm">
+                  <b>@{p.buyerUsername}</b> wants {p.kind === "scheme"
+                    ? <>in — <b>{p.tierName} scheme “{p.schemeName}” (${p.amount})</b></>
+                    : <><b>{p.qty} {p.schemeName} coins</b> from your lot</>}
+                </div>
+                <div className="mono mt-0.5 text-[11px] text-slate-500">{p.createdAt ? new Date(p.createdAt).toLocaleString() : ""}</div>
+                <div className="mt-2.5 flex gap-2">
+                  <button className={`${btnPrimary} flex-1`} onClick={() => decide(p.id, true)}>Approve — payment received</button>
+                  <button className={`${btnGhost} flex-1`} onClick={() => decide(p.id, false)}>Decline</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {coins.length > 0 && (
         <Card>
@@ -975,16 +1125,12 @@ function SchemesView({ me, toast, onChanged }) {
                 <div>
                   <div className="text-sm font-black">◉ {c.schemeName}</div>
                   <div className="mono text-[11px] text-slate-500">
-                    {c.balance} coins · +{c.dailyCoins}/day{c.claimable > 0 ? ` · ${c.claimable} waiting` : ""}
+                    {c.balance} coins · +{c.dailyCoins}/day{c.depositedToday > 0 ? ` · +${c.depositedToday} today` : ""}
                   </div>
                 </div>
-                <button
-                  className={c.claimable > 0 ? btnPrimary : btnGhost}
-                  disabled={c.claimable <= 0}
-                  onClick={() => collect(c.schemeId)}
-                >
-                  {c.claimable > 0 ? `Collect +${c.claimable}` : "Collected ✓"}
-                </button>
+                {c.depositedToday > 0
+                  ? <span className="rounded-full bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-300">+{c.depositedToday} today ✓</span>
+                  : <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-500">awaiting daily run</span>}
               </div>
             ))}
           </div>
@@ -993,22 +1139,27 @@ function SchemesView({ me, toast, onChanged }) {
 
       <Card>
         <h2 className="text-lg font-black">All schemes</h2>
-        <p className="text-xs text-slate-500">Join any scheme to collect its daily coins, then spend them on coin-priced lots.</p>
+        <p className="text-xs text-slate-500">Buy into a scheme: pay the owner the entry price outside the app, request here, and they approve you. Daily coins follow.</p>
         <div className="mt-3 space-y-2">
           {schemes.length === 0 && <div className="py-4 text-center text-xs text-slate-500">No schemes yet — start the first one above.</div>}
           {schemes.map((s) => (
-            <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-black/30 p-3">
-              <div>
-                <div className="text-sm font-black">◉ {s.name}</div>
-                <div className="mono text-[11px] text-slate-500">by @{s.ownerUsername} · +{s.dailyCoins}/day · {s.members} member{s.members === 1 ? "" : "s"}</div>
+            <div key={s.id} className="rounded-xl bg-black/30 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-black">◉ {s.name} <span className="ml-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold text-slate-400">{s.tierName}</span></div>
+                  <div className="mono mt-0.5 text-[11px] text-slate-500">
+                    by @{s.ownerUsername} · entry ${s.entryPrice} · +{s.dailyCoins}/day · {s.members} member{s.members === 1 ? "" : "s"}
+                    {s.pending ? " · request pending" : ""}
+                  </div>
+                </div>
+                {s.mine ? (
+                  s.ownerId === me.id
+                    ? <span className="rounded-full bg-violet-500/15 px-3 py-1.5 text-xs font-bold text-violet-300">YOUR SCHEME</span>
+                    : <button className={btnGhost} onClick={() => leave(s.id, s.name)}>Leave</button>
+                ) : (
+                  <button className={btnPrimary} onClick={() => buy(s)} disabled={s.pending}>{s.pending ? "Requested…" : `Buy — $${s.entryPrice}`}</button>
+                )}
               </div>
-              {s.mine ? (
-                s.ownerId === me.id
-                  ? <span className="rounded-full bg-violet-500/15 px-3 py-1.5 text-xs font-bold text-violet-300">YOUR SCHEME</span>
-                  : <button className={btnGhost} onClick={() => leave(s.id, s.name)}>Leave</button>
-              ) : (
-                <button className={btnPrimary} onClick={() => join(s.id, s.name)}>Join</button>
-              )}
             </div>
           ))}
         </div>
@@ -1021,19 +1172,35 @@ function SchemesView({ me, toast, onChanged }) {
 function AdminPanel({ toast, onBack }) {
   const [users, setUsers] = useState([]);
   const [txns, setTxns] = useState([]);
+  const [schemes, setSchemes] = useState([]);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("pending");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [u, t] = await Promise.all([apiAdminUsers(), apiAdminTxns()]);
+      const [u, t, s] = await Promise.all([apiAdminUsers(), apiAdminTxns(), apiSchemes()]);
       setUsers(u || []);
       setTxns(t || []);
+      setSchemes(s || []);
     } catch (e) { toast(e.message); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function distribute(schemeId) {
+    try {
+      setBusy(true);
+      const r = await apiDistribute(schemeId);
+      const lines = [
+        ...(r.sent || []).map((x) => `${x.name}: +${x.perUser} × ${x.members} members`),
+        ...(r.skipped || []).map((x) => `${x.name}: skipped (${x.reason})`),
+      ];
+      toast(lines.length ? `Coin run done — ${lines.join(" · ")}` : "Nothing to send.");
+      load();
+    } catch (e) { toast(e.message); }
+    finally { setBusy(false); }
+  }
 
   async function toggleBlock(u) {
     try {
@@ -1066,6 +1233,34 @@ function AdminPanel({ toast, onBack }) {
   return (
     <div className="rise mt-4 grid gap-4">
       <button onClick={onBack} className="w-fit text-xs font-bold text-cyan-300">← Back to account</button>
+      <Card className="border-amber-400/30">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-black">Today's coin run</h2>
+            <p className="text-xs text-slate-500">One click sends every scheme's daily coins to all its members. Already-run schemes are skipped.</p>
+          </div>
+          <button className={btnPrimary} disabled={busy} onClick={() => distribute(null)}>
+            {busy ? "Sending…" : "Send today's coins to ALL"}
+          </button>
+        </div>
+        <div className="mt-3 space-y-2">
+          {schemes.length === 0 && <div className="py-2 text-center text-xs text-slate-500">No active schemes.</div>}
+          {schemes.map((s) => (
+            <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-black/30 p-3">
+              <div>
+                <div className="text-sm font-black">◉ {s.name} <span className="ml-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold text-slate-400">{s.tierName}</span></div>
+                <div className="mono mt-0.5 text-[11px] text-slate-500">
+                  {s.members} member{s.members === 1 ? "" : "s"} × +{s.dailyCoins} = <b className="text-amber-300">{s.members * s.dailyCoins} coins</b>
+                  {s.distributedToday ? " · sent today ✓" : ""}
+                </div>
+              </div>
+              <button className={btnGhost} disabled={busy || s.distributedToday} onClick={() => distribute(s.id)}>
+                {s.distributedToday ? "Sent ✓" : "Send"}
+              </button>
+            </div>
+          ))}
+        </div>
+      </Card>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[["Members", users.length], ["Records", txns.length], ["Pending", pending], ["Completed", txns.length - pending]].map(([l, v]) => (
           <Card key={l} className="p-4 text-center">
@@ -1128,7 +1323,7 @@ function AdminPanel({ toast, onBack }) {
           <div className="flex gap-1.5">
             {[["pending", "Pending"], ["completed", "Completed"], ["all", "All"]].map(([v, l]) => (
               <button key={v} onClick={() => setStatus(v)}
-                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${status === v ? "bg-gradient-to-r from-cyan-400 to-violet-500 text-[#06121f]" : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"}`}>
+                className={`rounded-xl px-3 py-2.5 text-xs font-bold transition ${status === v ? "bg-gradient-to-r from-cyan-400 to-violet-500 text-[#06121f]" : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"}`}>
                 {l}
               </button>
             ))}
@@ -1280,9 +1475,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#080b14] bg-[radial-gradient(60rem_30rem_at_50%_-10rem,rgba(34,211,238,.12),transparent),radial-gradient(40rem_20rem_at_90%_10rem,rgba(167,139,250,.10),transparent)] text-slate-100">
+    <div className="min-h-dvh bg-[#080b14] bg-[radial-gradient(60rem_30rem_at_50%_-10rem,rgba(34,211,238,.12),transparent),radial-gradient(40rem_20rem_at_90%_10rem,rgba(167,139,250,.10),transparent)] text-slate-100">
       {!ready ? (
-          <div className="grid min-h-screen place-items-center gap-3 text-sm font-bold text-slate-300">
+          <div className="grid min-h-dvh place-items-center gap-3 text-sm font-bold text-slate-300">
             Genuine Business
           </div>
       ) : !me ? (

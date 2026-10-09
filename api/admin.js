@@ -7,6 +7,8 @@ import { getAuthUser, isAdmin } from "./_lib/auth.js";
 //   GET  /api/admin?action=txns
 //   POST /api/admin?action=complete  { txnId }
 //   POST /api/admin?action=block     { userId, blocked }
+//   POST /api/admin?action=distribute { schemeId? } — one click: today's coins to every
+//     member (or one scheme). Idempotent per day: already-run schemes are skipped.
 export default async function handler(req, res) {
   const action = req.query?.action;
   try {
@@ -79,6 +81,50 @@ export default async function handler(req, res) {
       if (isAdmin(target)) return send(res, 403, { error: "Admin accounts can't be blocked." });
       await db.collection("users").updateOne({ _id: target._id }, { $set: { blocked: !!blocked } });
       return send(res, 200, { ok: true });
+    }
+
+    if (action === "distribute" && req.method === "POST") {
+      const { schemeId } = await readJson(req);
+      const today = new Date().toISOString().slice(0, 10);
+      const schemes = schemeId
+        ? await db.collection("schemes").find({ _id: new ObjectId(schemeId), status: "active" }).toArray()
+        : await db.collection("schemes").find({ status: "active" }).toArray();
+      const sent = [];
+      const skipped = [];
+      for (const scheme of schemes) {
+        const sid = String(scheme._id);
+        if (scheme.lastDistributedAt && String(scheme.lastDistributedAt).slice(0, 10) === today) {
+          skipped.push({ schemeId: sid, name: scheme.name, reason: "already sent today" });
+          continue;
+        }
+        const members = await db.collection("memberships").find({ schemeId: sid }).toArray();
+        if (members.length === 0) {
+          await db.collection("schemes").updateOne({ _id: scheme._id }, { $set: { lastDistributedAt: today } });
+          skipped.push({ schemeId: sid, name: scheme.name, reason: "no members" });
+          continue;
+        }
+        const now = new Date().toISOString();
+        const bulk = db.collection("memberships").initializeUnorderedBulkOp();
+        for (const m of members) bulk.find({ _id: m._id }).updateOne({ $inc: { balance: scheme.dailyCoins } });
+        await bulk.execute();
+        await db.collection("coinlogs").insertMany(
+          members.map((m) => ({
+            userId: m.userId, schemeId: sid, schemeName: scheme.name,
+            kind: "distribute", amount: scheme.dailyCoins, balanceAfter: m.balance + scheme.dailyCoins,
+            ref: today, at: now,
+          }))
+        );
+        await db.collection("notifs").insertMany(
+          members.map((m) => ({
+            userId: m.userId, txnId: null,
+            text: `Today's coins deposited: +${scheme.dailyCoins} ${scheme.name} coins. Your balance grew — spend them on lots or hold.`,
+            read: false, createdAt: now,
+          }))
+        );
+        await db.collection("schemes").updateOne({ _id: scheme._id }, { $set: { lastDistributedAt: today } });
+        sent.push({ schemeId: sid, name: scheme.name, members: members.length, perUser: scheme.dailyCoins, total: members.length * scheme.dailyCoins });
+      }
+      return send(res, 200, { sent, skipped });
     }
 
     return send(res, 404, { error: "Unknown admin action." });

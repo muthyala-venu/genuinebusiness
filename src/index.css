@@ -8,6 +8,14 @@ html, body {
   background: #080b14;
   color: #e6eaf2;
   font-family: ui-sans-system, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  /* native-app shell: no page-level sideways scroll, no rubber-band chaining, no tap-zoom */
+  overflow-x: hidden;
+  overflow-x: clip;
+  overscroll-behavior-y: none;
+}
+
+body {
+  touch-action: manipulation;
 }
 
 * { -webkit-tap-highlight-color: transparent; }

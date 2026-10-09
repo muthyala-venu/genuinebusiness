@@ -4,30 +4,37 @@ Manual P2P bookkeeping ledger. No money moves here — purely visual record-keep
 **Username is chosen by the user; password is generated randomly by the system** (shown once at signup, changeable in Account → Change password).
 
 ## Features
-- **Market board** — members post lots: *open to sell* (have a lot, want a partner) or *open to buy*
-  (want a lot, seek a partner), per tier with an optional note. Filter by side/tier, express interest
-  (the poster is notified), then pair.
+- **Market board** — pairing lots (open to sell / open to buy per tier) and **redeem lots**
+  (members sell their coins openly), plus **direct buyout requests** to a specific user by username.
+- **Tiered coin schemes** — any member runs a scheme on a tier (entry price = tier amount,
+  e.g. Bronze = 150). Others buy in: they pay the owner off-app, the owner approves here,
+  and they earn daily coins. One coin = 1 USDT, internal points only.
+- **Owner approvals** — scheme buys and coin trades both go through manual approve/decline
+  by the counterparty after off-app settlement; every decision is written to the diary.
+- **Admin one-click distribution** — the daily coin run credits every member of every scheme
+  (per-scheme math shown, already-run schemes skipped). Members see "today's coins deposited".
 - **Manual pairing** — paste a partner's wallet text (exchanged off-app) → see their profile →
   send a pairing request. One wallet text belongs to exactly one member.
-- **Two-sided diary** — every record moves Address shared → Awaiting confirmation → Completed,
-  with record IDs, timestamps, partner, tier and status; JSON export included.
-- **Loyalty coins (1 coin = 1 USDT, internal points)** — anyone runs a scheme (name + daily coins per
-  member); others join and tap Collect each day (up to 7 days backlog). Lots can be priced in a
-  scheme's coins: the buyer must hold enough, coins move buyer → seller on acknowledge, the lot
-  auto-closes, and every movement lands in the coin history. Record-only lots need no coins.
-- **Inbox** — pairing requests, interest notes and completion confirmations, with per-record
-  acknowledge forms (receiver picks the verified amount).
+- **Two-sided diary** — pairing records, scheme entries and coin trades, each with IDs,
+  timestamps, parties and status; JSON export included.
+- **Redeem market (sell-side only)** — members redeem by selling coins openly on the board,
+  or by sending a direct buyout request to a specific user. The counterparty approves after
+  off-app settlement; coins move and the trade is recorded. Pairing lots can also be coin-priced.
+- **Inbox** — pairing requests, buy/approval proposals, interest notes and completion
+  confirmations, with per-record acknowledge forms (receiver picks the verified amount).
 - **Admin console** — members, all records, force-complete, block/unblock.
 - **PWA, mobile-first** — bottom tab bar, 44px+ touch targets, 16px inputs (no iOS zoom),
   safe-area support, installable, offline app shell. API responses are never cached.
 
 ## The standard flow (money moves off-app, records live here)
-1. **Discover** — browse Market, or agree directly with someone you know.
-2. **Agree off-app** — settle tier and details over WhatsApp / in person. Money moves here, outside the app.
-3. **Exchange addresses off-app** — partners share public wallet *text* (never a connection, never inside the app).
-4. **Record** — paste their wallet text in Find your partner, confirm the profile, send the request.
-5. **Verify off-app** — the receiver checks their own wallet independently.
-6. **Acknowledge** — the receiver confirms the exact amount in their inbox → both ledgers turn Completed.
+1. **Discover** — browse Market lots/schemes, or deal with someone you know.
+2. **Agree + pay off-app** — tier, price and wallet details settled over WhatsApp / in person.
+   Money (including scheme entries and coin purchases) moves here, outside the app.
+3. **Exchange addresses off-app** — partners share public wallet *text* (never a connection).
+4. **Request + approve** — buyer requests here (scheme buy or coin trade); the owner approves
+   after confirming off-app payment. Approval moves coins / grants membership and writes the record.
+5. **Daily coins** — admin runs the one-click distribution; members see today's deposit in inbox + wallet.
+6. **Redeem** — sell coins openly via a coin lot, or request a specific user to buy; approve on settlement.
 7. **Keep the diary** — filter the ledger, export JSON, dispute via admin if needed.
 
 ## Admin dashboard
